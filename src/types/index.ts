@@ -28,7 +28,6 @@ export interface Task {
   deadline: string;
   status: 'pending' | 'in_progress' | 'completed';
   created_by: string;
-  feishu_webhook?: string | null;
 }
 
 export const CITIES = [
