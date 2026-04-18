@@ -88,8 +88,9 @@ function ArticleEditor({ task, visible, onClose }: { task: TaskWithArticles; vis
       message.success('已标记为准备发布');
       
       // 如果有配置飞书 webhook，发送通知
-      if (task.feishu_webhook) {
-        await sendFeishuNotification(task.feishu_webhook, task, article);
+      const feishuWebhook = localStorage.getItem('feishu_webhook');
+      if (feishuWebhook) {
+        await sendFeishuNotification(feishuWebhook, task, article);
       }
     } catch {
       message.error('操作失败');

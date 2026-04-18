@@ -207,7 +207,6 @@ function SingleTaskForm({ onSubmit, loading }: { onSubmit: (values: any) => void
       deadline: values.deadline.format('YYYY-MM-DD'),
       status: 'pending',
       created_by: '任务创建者',
-      feishu_webhook: values.feishu_webhook || null,
     });
     form.resetFields();
   };
@@ -283,16 +282,6 @@ function SingleTaskForm({ onSubmit, loading }: { onSubmit: (values: any) => void
             style={{ width: '100%' }}
             size="large"
             disabledDate={(current) => current && current < dayjs().startOf('day')}
-          />
-        </Form.Item>
-
-        <Form.Item
-          name="feishu_webhook"
-          label="飞书群 Webhook 地址"
-        >
-          <Input
-            placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/...（可选，用于任务完成时通知）"
-            size="large"
           />
         </Form.Item>
 
