@@ -254,7 +254,7 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
   }, []);
 
   // 防抖保存（用于输入时延迟保存）
-  const debouncedSaveRef = useRef<NodeJS.Timeout | null>(null);
+  const debouncedSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debouncedSaveToHistory = useCallback((content: string) => {
     if (debouncedSaveRef.current) {
       clearTimeout(debouncedSaveRef.current);
