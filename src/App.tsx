@@ -21,6 +21,7 @@ import ContentWriter from './components/ContentWriter';
 import TaskPublisher from './components/TaskPublisher';
 import WebsiteManager from './components/WebsiteManager';
 import PromptManager from './components/PromptManager';
+import Settings from './components/Settings';
 import { supabase } from './supabase';
 import type { UserRole, TaskWithArticles, Task, Article } from './types';
 import dayjs from 'dayjs';
@@ -34,6 +35,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 type CreatorSubPage = 'single' | 'batch' | 'websites';
 type WriterSubPage = 'tasks' | 'prompts' | 'draft' | 'ready' | 'completed';
 type PublisherSubPage = 'tasks' | 'ready' | 'completed';
+type SettingsSubPage = 'general' | 'notifications';
 
 function SetupGuide() {
   const sqlScript = `-- 创建任务表
@@ -113,7 +115,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE articles;`;
 }
 
 function App() {
-  const [currentRole, setCurrentRole] = useState<UserRole>('creator');
+  const [currentRole, setCurrentRole] = useState<UserRole | 'settings'>('creator');
   const [creatorSubPage, setCreatorSubPage] = useState<CreatorSubPage>('single');
   const [writerSubPage, setWriterSubPage] = useState<WriterSubPage>('tasks');
   const [publisherSubPage, setPublisherSubPage] = useState<PublisherSubPage>('tasks');
@@ -276,6 +278,11 @@ function App() {
         },
       ],
     },
+    {
+      key: 'settings',
+      icon: <SettingOutlined />,
+      label: '系统设置',
+    },
   ];
 
   const renderContent = () => {
@@ -321,6 +328,8 @@ function App() {
           default:
             return <TaskPublisher />;
         }
+      case 'settings':
+        return <Settings />;
       default:
         return <TaskCreator defaultTab="single" />;
     }
@@ -425,7 +434,9 @@ function App() {
                 ? ['writer', `writer-${writerSubPage}`]
                 : currentRole === 'publisher'
                   ? ['publisher', `publisher-${publisherSubPage}`]
-                  : [currentRole]
+                  : currentRole === 'settings'
+                    ? ['settings']
+                    : [currentRole]
           }
           openKeys={openKeys}
           onOpenChange={setOpenKeys}
@@ -475,6 +486,9 @@ function App() {
               setCurrentRole('publisher');
               setPublisherSubPage('tasks');
               setOpenKeys(['publisher']);
+            } else if (key === 'settings') {
+              setCurrentRole('settings');
+              setOpenKeys(['settings']);
             } else {
               setCurrentRole(key as UserRole);
             }
