@@ -7,6 +7,28 @@ import { CITIES } from '../types';
 import dayjs from 'dayjs';
 import RichTextEditor from './RichTextEditor';
 
+// 发送飞书通知
+const sendFeishuNotification = async (webhook: string, task: TaskWithArticles, article: Article) => {
+  try {
+    const response = await fetch(webhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        msg_type: 'text',
+        content: {
+          text: `📢 新内容待发布\n\n任务：${task.city}\n文章状态：准备发布\n截止日期：${dayjs(task.deadline).format('YYYY-MM-DD')}\n\n请尽快安排发布。`
+        }
+      })
+    });
+    
+    if (!response.ok) {
+      console.error('飞书通知发送失败:', await response.text());
+    }
+  } catch (error) {
+    console.error('发送飞书通知出错:', error);
+  }
+};
+
 const { Text, Title } = Typography;
 
 // 从 PromptManager 读取提示词类型
@@ -64,6 +86,11 @@ function ArticleEditor({ task, visible, onClose }: { task: TaskWithArticles; vis
     try {
       await updateArticle(article.id, { status: 'ready' });
       message.success('已标记为准备发布');
+      
+      // 如果有配置飞书 webhook，发送通知
+      if (task.feishu_webhook) {
+        await sendFeishuNotification(task.feishu_webhook, task, article);
+      }
     } catch {
       message.error('操作失败');
     }
