@@ -572,23 +572,10 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
               padding: '4px',
               background: totalCount > 0 ? '#f6ffed' : 'transparent',
               borderRadius: 4,
-              cursor: 'pointer',
-            }}
-            onClick={(e) => {
-              // 如果点击的是按钮，不处理
-              if ((e.target as HTMLElement).tagName === 'BUTTON' || 
-                  (e.target as HTMLElement).closest('button')) {
-                return;
-              }
-              setDetailRowId(record.id);
-              setActivePromptType(type.id);
-              setDetailModalVisible(true);
             }}
           >
             <Space direction="vertical" size="small" style={{ width: '100%' }}>
-              {totalCount === 0 ? (
-                <Text type="secondary" style={{ fontSize: 12 }}>点击配置</Text>
-              ) : (
+              {totalCount > 0 && (
                 <>
                   {configs.filter(c => c.count > 0).map((config, idx) => (
                     <Tag key={idx} color="blue">
@@ -612,31 +599,29 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
                   {totalCount === 0 ? '配置' : '编辑'}
                 </Button>
                 {totalCount > 0 && (
-                  <>
-                    <Button 
-                      type="link" 
-                      size="small"
-                      style={{ padding: 0, fontSize: 12 }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        copyPromptConfig(record, type.id);
-                      }}
-                    >
-                      复制
-                    </Button>
-                    <Button 
-                      type="link" 
-                      size="small"
-                      style={{ padding: 0, fontSize: 12 }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        pastePromptConfig(record.id, type.id);
-                      }}
-                    >
-                      粘贴
-                    </Button>
-                  </>
+                  <Button 
+                    type="link" 
+                    size="small"
+                    style={{ padding: 0, fontSize: 12 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      copyPromptConfig(record, type.id);
+                    }}
+                  >
+                    复制
+                  </Button>
                 )}
+                <Button 
+                  type="link" 
+                  size="small"
+                  style={{ padding: 0, fontSize: 12 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    pastePromptConfig(record.id, type.id);
+                  }}
+                >
+                  粘贴
+                </Button>
               </Space>
             </Space>
           </div>
@@ -984,10 +969,24 @@ function DetailConfigPanel({
 
 // 已创建任务列表
 function CreatedTasksList() {
-  const { tasks, loading, refreshTasks } = useTasks();
+  const { tasks, loading, error, refreshTasks } = useTasks();
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const promptTypes = usePromptTypes();
+
+  // 如果有错误，显示错误信息
+  if (error) {
+    return (
+      <Empty
+        description={
+          <Space direction="vertical" size="small">
+            <Text type="danger">加载失败: {error}</Text>
+            <Button onClick={refreshTasks} size="small">重试</Button>
+          </Space>
+        }
+      />
+    );
+  }
 
   // 过滤任务
   const filteredTasks = useMemo(() => {
