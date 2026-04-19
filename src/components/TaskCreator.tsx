@@ -1249,8 +1249,8 @@ function CreateTaskPage() {
 }
 
 // 主组件
-export default function TaskCreator() {
-  const [activeMainTab, setActiveMainTab] = useState('create');
+export default function TaskCreator({ defaultView = 'create' }: { defaultView?: 'create' | 'created' }) {
+  const [activeMainTab, setActiveMainTab] = useState(defaultView);
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
