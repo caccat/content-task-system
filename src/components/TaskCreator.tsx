@@ -490,31 +490,31 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
     message.success(`已粘贴 ${cities.length} 个城市`);
   };
 
-  // 复制提示词配置到剪贴板
+  // 使用全局变量存储复制的配置（避免剪贴板权限问题）
+  const [copiedConfig, setCopiedConfig] = useState<{ configs: WebsiteConfig[]; sourceKey: string } | null>(null);
+
+  // 复制提示词配置
   const copyPromptConfig = (row: BatchTaskRow, promptTypeId: string) => {
     const configs = row.promptTypeConfigs[promptTypeId] || [];
-    const configData = JSON.stringify(configs);
-    navigator.clipboard.writeText(`PROMPT_CONFIG:${configData}`);
-    message.success('配置已复制');
+    setCopiedConfig({ configs: JSON.parse(JSON.stringify(configs)), sourceKey: `${row.id}-${promptTypeId}` });
+    message.success('配置已复制，点击其他格的"粘贴"按钮即可应用');
   };
 
   // 粘贴提示词配置
-  const pastePromptConfig = async (rowId: string, promptTypeId: string) => {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (!text.startsWith('PROMPT_CONFIG:')) {
-        message.error('剪贴板中没有有效的配置数据，请先复制一个配置');
-        return;
-      }
-      
-      const configData = text.replace('PROMPT_CONFIG:', '');
-      const configs: WebsiteConfig[] = JSON.parse(configData);
-      updateWebsiteConfig(rowId, promptTypeId, configs);
-      message.success('配置已粘贴');
-    } catch (err) {
-      console.error('粘贴失败:', err);
-      message.error('粘贴失败，请确保已授予剪贴板权限');
+  const pastePromptConfig = (rowId: string, promptTypeId: string) => {
+    if (!copiedConfig) {
+      message.error('请先复制一个配置');
+      return;
     }
+    
+    // 防止粘贴到同一个格
+    if (copiedConfig.sourceKey === `${rowId}-${promptTypeId}`) {
+      message.warning('不能粘贴到同一个格');
+      return;
+    }
+    
+    updateWebsiteConfig(rowId, promptTypeId, copiedConfig.configs);
+    message.success('配置已粘贴');
   };
 
   // 表格列定义
