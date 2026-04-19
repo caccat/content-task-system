@@ -462,18 +462,78 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
     );
   };
 
+  // 处理城市批量粘贴
+  const handleCityPaste = (rowId: string, pasteText: string) => {
+    const cities = pasteText.split(/[\n,，;；]/).map(c => c.trim()).filter(c => c);
+    if (cities.length === 0) return;
+    
+    const rowIndex = rows.findIndex(r => r.id === rowId);
+    if (rowIndex === -1) return;
+    
+    const newRows = [...rows];
+    
+    // 第一个城市填入当前行
+    newRows[rowIndex] = { ...newRows[rowIndex], city: cities[0] };
+    
+    // 剩余的城市自动添加新行
+    for (let i = 1; i < cities.length; i++) {
+      const newRow = createEmptyRow();
+      newRow.city = cities[i];
+      // 复制当前行的其他配置
+      newRow.totalCount = newRows[rowIndex].totalCount;
+      newRow.deadline = newRows[rowIndex].deadline;
+      newRow.promptTypeConfigs = JSON.parse(JSON.stringify(newRows[rowIndex].promptTypeConfigs));
+      newRows.splice(rowIndex + i, 0, newRow);
+    }
+    
+    setRows(newRows);
+    message.success(`已粘贴 ${cities.length} 个城市`);
+  };
+
+  // 复制提示词配置到剪贴板
+  const copyPromptConfig = (row: BatchTaskRow, promptTypeId: string) => {
+    const configs = row.promptTypeConfigs[promptTypeId] || [];
+    const configData = JSON.stringify(configs);
+    navigator.clipboard.writeText(`PROMPT_CONFIG:${configData}`);
+    message.success('配置已复制');
+  };
+
+  // 粘贴提示词配置
+  const pastePromptConfig = (rowId: string, promptTypeId: string) => {
+    navigator.clipboard.readText().then(text => {
+      if (!text.startsWith('PROMPT_CONFIG:')) {
+        message.error('剪贴板中没有有效的配置数据');
+        return;
+      }
+      
+      try {
+        const configData = text.replace('PROMPT_CONFIG:', '');
+        const configs: WebsiteConfig[] = JSON.parse(configData);
+        updateWebsiteConfig(rowId, promptTypeId, configs);
+        message.success('配置已粘贴');
+      } catch {
+        message.error('配置数据格式错误');
+      }
+    });
+  };
+
   // 表格列定义
   const columns = [
     {
       title: '城市',
       dataIndex: 'city',
       key: 'city',
-      width: 120,
+      width: 140,
       render: (city: string, record: BatchTaskRow) => (
         <Input
           value={city}
           placeholder="输入城市"
           onChange={(e) => updateRow(record.id, { city: e.target.value })}
+          onPaste={(e) => {
+            e.preventDefault();
+            const pasteText = e.clipboardData.getData('text');
+            handleCityPaste(record.id, pasteText);
+          }}
           size="small"
         />
       ),
@@ -494,10 +554,94 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
       ),
     },
     ...promptTypes.map(type => ({
-      title: type.type,
+      title: (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span>{type.type}</span>
+        </div>
+      ),
       key: type.id,
-      width: 150,
-      render: (_: any, record: BatchTaskRow) => renderWebsiteCell(record, type.id),
+      width: 180,
+      render: (_: any, record: BatchTaskRow) => {
+        const configs = record.promptTypeConfigs[type.id] || [];
+        const totalCount = configs.reduce((sum, c) => sum + c.count, 0);
+        
+        return (
+          <div 
+            style={{ 
+              position: 'relative', 
+              padding: '4px',
+              background: totalCount > 0 ? '#f6ffed' : 'transparent',
+              borderRadius: 4,
+              cursor: 'pointer',
+            }}
+            onClick={(e) => {
+              // 如果点击的是按钮，不处理
+              if ((e.target as HTMLElement).tagName === 'BUTTON' || 
+                  (e.target as HTMLElement).closest('button')) {
+                return;
+              }
+              setDetailRowId(record.id);
+              setActivePromptType(type.id);
+              setDetailModalVisible(true);
+            }}
+          >
+            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+              {totalCount === 0 ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>点击配置</Text>
+              ) : (
+                <>
+                  {configs.filter(c => c.count > 0).map((config, idx) => (
+                    <Tag key={idx} size="small" color="blue">
+                      {getWebsiteName(config.websiteId)} × {config.count}
+                    </Tag>
+                  ))}
+                </>
+              )}
+              <Space size="small">
+                <Button 
+                  type="link" 
+                  size="small"
+                  style={{ padding: 0, fontSize: 12 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDetailRowId(record.id);
+                    setActivePromptType(type.id);
+                    setDetailModalVisible(true);
+                  }}
+                >
+                  {totalCount === 0 ? '配置' : '编辑'}
+                </Button>
+                {totalCount > 0 && (
+                  <>
+                    <Button 
+                      type="link" 
+                      size="small"
+                      style={{ padding: 0, fontSize: 12 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyPromptConfig(record, type.id);
+                      }}
+                    >
+                      复制
+                    </Button>
+                    <Button 
+                      type="link" 
+                      size="small"
+                      style={{ padding: 0, fontSize: 12 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        pastePromptConfig(record.id, type.id);
+                      }}
+                    >
+                      粘贴
+                    </Button>
+                  </>
+                )}
+              </Space>
+            </Space>
+          </div>
+        );
+      },
     })),
     {
       title: '截止日期',
