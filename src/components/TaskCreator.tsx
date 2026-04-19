@@ -969,9 +969,10 @@ function DetailConfigPanel({
 
 // 已创建任务列表
 function CreatedTasksList() {
-  const { tasks, loading, error, refreshTasks } = useTasks();
+  const { tasks, loading, error, refreshTasks, deleteTask } = useTasks();
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const promptTypes = usePromptTypes();
 
   // 如果有错误，显示错误信息
@@ -1038,6 +1039,53 @@ function CreatedTasksList() {
     }
   };
 
+  // 处理单条删除
+  const handleDelete = async (record: any) => {
+    try {
+      // 需要找到对应的所有任务 ID
+      const tasksToDelete = filteredTasks.filter(
+        t => t.city === record.city && t.prompt_type === record.promptType
+      );
+      
+      for (const task of tasksToDelete) {
+        await deleteTask(task.id);
+      }
+      
+      message.success('删除成功');
+      refreshTasks();
+    } catch (err) {
+      message.error('删除失败');
+    }
+  };
+
+  // 处理批量删除
+  const handleBatchDelete = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择要删除的任务');
+      return;
+    }
+    
+    try {
+      for (const key of selectedRowKeys) {
+        const record = groupedStats.find(g => `${g.city}-${g.promptType}` === key);
+        if (record) {
+          const tasksToDelete = filteredTasks.filter(
+            t => t.city === record.city && t.prompt_type === record.promptType
+          );
+          for (const task of tasksToDelete) {
+            await deleteTask(task.id);
+          }
+        }
+      }
+      
+      message.success('批量删除成功');
+      setSelectedRowKeys([]);
+      refreshTasks();
+    } catch (err) {
+      message.error('批量删除失败');
+    }
+  };
+
   const columns = [
     {
       title: '城市',
@@ -1061,7 +1109,31 @@ function CreatedTasksList() {
       key: 'status',
       render: (status: string) => getStatusTag(status),
     },
+    {
+      title: '操作',
+      key: 'action',
+      width: 80,
+      render: (_: any, record: any) => (
+        <Popconfirm
+          title="确定删除?"
+          description={`删除 ${record.city} 的 ${record.count} 篇文章`}
+          onConfirm={() => handleDelete(record)}
+          okText="确定"
+          cancelText="取消"
+        >
+          <Button type="link" danger size="small">删除</Button>
+        </Popconfirm>
+      ),
+    },
   ];
+
+  // 行选择配置
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (newSelectedRowKeys: React.Key[]) => {
+      setSelectedRowKeys(newSelectedRowKeys);
+    },
+  };
 
   // 统计
   const stats = useMemo(() => {
@@ -1087,9 +1159,22 @@ function CreatedTasksList() {
           <Select.Option value="completed">已完成</Select.Option>
         </Select>
         <Button icon={<FilterOutlined />} onClick={refreshTasks}>刷新</Button>
+        <Popconfirm
+          title="确定批量删除?"
+          description={`删除选中的 ${selectedRowKeys.length} 项任务`}
+          onConfirm={handleBatchDelete}
+          okText="确定"
+          cancelText="取消"
+          disabled={selectedRowKeys.length === 0}
+        >
+          <Button danger disabled={selectedRowKeys.length === 0}>
+            批量删除
+          </Button>
+        </Popconfirm>
       </Space>
 
       <Table
+        rowSelection={rowSelection}
         dataSource={groupedStats}
         columns={columns}
         pagination={false}
@@ -1110,16 +1195,11 @@ function CreatedTasksList() {
   );
 }
 
-// 主组件
-export default function TaskCreator({ defaultTab = 'single' }: { defaultTab?: string }) {
+// 开始创建页面 - 包含单个创建和批量创建子标签
+function CreateTaskPage() {
   const { createTask } = useTasks();
-  const [activeTab, setActiveTab] = useState(defaultTab);
+  const [activeSubTab, setActiveSubTab] = useState('single');
   const [loading, setLoading] = useState(false);
-
-  // 当 defaultTab 变化时更新 activeTab
-  useEffect(() => {
-    setActiveTab(defaultTab);
-  }, [defaultTab]);
 
   const handleSingleSubmit = async (taskData: any) => {
     setLoading(true);
@@ -1147,26 +1227,49 @@ export default function TaskCreator({ defaultTab = 'single' }: { defaultTab?: st
     }
   };
 
-  const items = [
-    {
-      key: 'single',
-      label: '单个创建',
-      children: <SingleTaskForm onSubmit={handleSingleSubmit} loading={loading} />,
-    },
-    {
-      key: 'batch',
-      label: '批量创建',
-      children: <BatchTaskForm onSubmit={handleBatchSubmit} loading={loading} />,
-    },
-  ];
+  return (
+    <Tabs
+      activeKey={activeSubTab}
+      onChange={setActiveSubTab}
+      items={[
+        {
+          key: 'single',
+          label: '单个创建',
+          children: <SingleTaskForm onSubmit={handleSingleSubmit} loading={loading} />,
+        },
+        {
+          key: 'batch',
+          label: '批量创建',
+          children: <BatchTaskForm onSubmit={handleBatchSubmit} loading={loading} />,
+        },
+      ]}
+      size="large"
+    />
+  );
+}
+
+// 主组件
+export default function TaskCreator() {
+  const [activeMainTab, setActiveMainTab] = useState('create');
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: '24px' }}>
+    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
       <Card title="创建内容生产和发布任务" bordered={false}>
         <Tabs
-          activeKey={activeTab}
-          onChange={setActiveTab}
-          items={items}
+          activeKey={activeMainTab}
+          onChange={setActiveMainTab}
+          items={[
+            {
+              key: 'create',
+              label: '开始创建',
+              children: <CreateTaskPage />,
+            },
+            {
+              key: 'created',
+              label: '已创建',
+              children: <CreatedTasksList />,
+            },
+          ]}
           size="large"
         />
       </Card>
