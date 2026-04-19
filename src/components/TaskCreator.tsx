@@ -499,22 +499,22 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
   };
 
   // 粘贴提示词配置
-  const pastePromptConfig = (rowId: string, promptTypeId: string) => {
-    navigator.clipboard.readText().then(text => {
+  const pastePromptConfig = async (rowId: string, promptTypeId: string) => {
+    try {
+      const text = await navigator.clipboard.readText();
       if (!text.startsWith('PROMPT_CONFIG:')) {
-        message.error('剪贴板中没有有效的配置数据');
+        message.error('剪贴板中没有有效的配置数据，请先复制一个配置');
         return;
       }
       
-      try {
-        const configData = text.replace('PROMPT_CONFIG:', '');
-        const configs: WebsiteConfig[] = JSON.parse(configData);
-        updateWebsiteConfig(rowId, promptTypeId, configs);
-        message.success('配置已粘贴');
-      } catch {
-        message.error('配置数据格式错误');
-      }
-    });
+      const configData = text.replace('PROMPT_CONFIG:', '');
+      const configs: WebsiteConfig[] = JSON.parse(configData);
+      updateWebsiteConfig(rowId, promptTypeId, configs);
+      message.success('配置已粘贴');
+    } catch (err) {
+      console.error('粘贴失败:', err);
+      message.error('粘贴失败，请确保已授予剪贴板权限');
+    }
   };
 
   // 表格列定义
