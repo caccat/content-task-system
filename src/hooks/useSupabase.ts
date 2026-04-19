@@ -1,16 +1,11 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../supabase';
 import type { Task, Article, TaskWithArticles } from '../types';
-
-// 生成唯一 ID
-let uniqueId = 0;
-const getUniqueId = () => `tasks-${++uniqueId}-${Date.now()}`;
 
 export function useTasks() {
   const [tasks, setTasks] = useState<TaskWithArticles[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const channelNameRef = useRef<string>(getUniqueId());
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -61,19 +56,14 @@ export function useTasks() {
 
   useEffect(() => {
     fetchTasks();
-
-    // 使用唯一 channel 名称避免冲突
-    const channelName = channelNameRef.current;
     
-    const channel = supabase
-      .channel(channelName)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-        fetchTasks();
-      })
-      .subscribe();
+    // 禁用实时订阅，使用轮询避免错误
+    const interval = setInterval(() => {
+      fetchTasks();
+    }, 10000); // 每 10 秒刷新一次
 
     return () => {
-      channel.unsubscribe();
+      clearInterval(interval);
     };
   }, [fetchTasks]);
 
@@ -153,21 +143,14 @@ export function useArticles(taskId?: string) {
 
   useEffect(() => {
     fetchArticles();
-
-    const channel = supabase.channel(`articles-${taskId}`);
     
-    channel
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'articles', filter: `task_id=eq.${taskId}` },
-        () => {
-          fetchArticles();
-        }
-      )
-      .subscribe();
+    // 禁用实时订阅，使用轮询避免错误
+    const interval = setInterval(() => {
+      fetchArticles();
+    }, 10000); // 每 10 秒刷新一次
 
     return () => {
-      channel.unsubscribe();
+      clearInterval(interval);
     };
   }, [taskId, fetchArticles]);
 
