@@ -62,9 +62,10 @@ export function useTasks() {
     if (subscribedRef.current) return;
     subscribedRef.current = true;
 
-    // 使用单通道监听多个表的变化
-    const subscription = supabase
-      .channel('tasks-channel')
+    // 使用单通道监听多个表的变化 - 在 subscribe 之前注册所有回调
+    const channel = supabase.channel('tasks-channel');
+    
+    channel
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
         fetchTasks();
       })
@@ -74,7 +75,7 @@ export function useTasks() {
       .subscribe();
 
     return () => {
-      subscription.unsubscribe();
+      channel.unsubscribe();
       subscribedRef.current = false;
     };
   }, [fetchTasks]);
@@ -156,8 +157,9 @@ export function useArticles(taskId?: string) {
   useEffect(() => {
     fetchArticles();
 
-    const subscription = supabase
-      .channel(`articles-${taskId}`)
+    const channel = supabase.channel(`articles-${taskId}`);
+    
+    channel
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'articles', filter: `task_id=eq.${taskId}` },
@@ -168,7 +170,7 @@ export function useArticles(taskId?: string) {
       .subscribe();
 
     return () => {
-      subscription.unsubscribe();
+      channel.unsubscribe();
     };
   }, [taskId, fetchArticles]);
 
