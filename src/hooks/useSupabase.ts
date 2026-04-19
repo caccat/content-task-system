@@ -2,11 +2,15 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../supabase';
 import type { Task, Article, TaskWithArticles } from '../types';
 
+// 生成唯一 ID
+let uniqueId = 0;
+const getUniqueId = () => `tasks-${++uniqueId}-${Date.now()}`;
+
 export function useTasks() {
   const [tasks, setTasks] = useState<TaskWithArticles[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const subscribedRef = useRef(false);
+  const channelNameRef = useRef<string>(getUniqueId());
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -58,25 +62,18 @@ export function useTasks() {
   useEffect(() => {
     fetchTasks();
 
-    // 防止 React 18 严格模式下重复订阅
-    if (subscribedRef.current) return;
-    subscribedRef.current = true;
-
-    // 使用单通道监听多个表的变化 - 在 subscribe 之前注册所有回调
-    const channel = supabase.channel('tasks-channel');
+    // 使用唯一 channel 名称避免冲突
+    const channelName = channelNameRef.current;
     
-    channel
+    const channel = supabase
+      .channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-        fetchTasks();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'articles' }, () => {
         fetchTasks();
       })
       .subscribe();
 
     return () => {
       channel.unsubscribe();
-      subscribedRef.current = false;
     };
   }, [fetchTasks]);
 
