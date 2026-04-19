@@ -32,7 +32,7 @@ const { Title, Paragraph } = Typography;
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
 // 子页面类型
-type CreatorSubPage = 'single' | 'batch' | 'websites';
+type CreatorSubPage = 'create' | 'created' | 'websites';
 type WriterSubPage = 'tasks' | 'prompts' | 'draft' | 'ready' | 'completed';
 type PublisherSubPage = 'tasks' | 'ready' | 'completed';
 type SettingsSubPage = 'general' | 'notifications';
@@ -116,7 +116,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE articles;`;
 
 function App() {
   const [currentRole, setCurrentRole] = useState<UserRole | 'settings'>('creator');
-  const [creatorSubPage, setCreatorSubPage] = useState<CreatorSubPage>('single');
+  const [creatorSubPage, setCreatorSubPage] = useState<CreatorSubPage>('create');
   const [writerSubPage, setWriterSubPage] = useState<WriterSubPage>('tasks');
   const [publisherSubPage, setPublisherSubPage] = useState<PublisherSubPage>('tasks');
   const [openKeys, setOpenKeys] = useState<string[]>(['creator', 'writer', 'publisher']);
@@ -174,14 +174,14 @@ function App() {
       label: '任务创建者',
       children: [
         {
-          key: 'creator-single',
+          key: 'creator-create',
           icon: <FileAddOutlined />,
-          label: '单个创建',
+          label: '开始创建',
         },
         {
-          key: 'creator-batch',
-          icon: <AppstoreAddOutlined />,
-          label: '批量创建',
+          key: 'creator-created',
+          icon: <UnorderedListOutlined />,
+          label: '已创建',
         },
         {
           key: 'creator-websites',
@@ -293,12 +293,14 @@ function App() {
     switch (currentRole) {
       case 'creator':
         switch (creatorSubPage) {
-          case 'single':
-          case 'batch':
+          case 'create':
+            return <TaskCreator defaultView="create" />;
+          case 'created':
+            return <TaskCreator defaultView="created" />;
           case 'websites':
-            return <TaskCreator />;
+            return <WebsiteManager />;
           default:
-            return <TaskCreator />;
+            return <TaskCreator defaultView="create" />;
         }
       case 'writer':
         switch (writerSubPage) {
