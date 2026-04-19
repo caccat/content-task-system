@@ -591,7 +591,7 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
               ) : (
                 <>
                   {configs.filter(c => c.count > 0).map((config, idx) => (
-                    <Tag key={idx} size="small" color="blue">
+                    <Tag key={idx} color="blue">
                       {getWebsiteName(config.websiteId)} × {config.count}
                     </Tag>
                   ))}
