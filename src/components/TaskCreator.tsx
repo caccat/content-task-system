@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
-import { Form, Input, Select, DatePicker, InputNumber, Button, Card, message, Space, Tabs, Table, Tag, Divider, Typography, Collapse, Modal, Empty } from 'antd';
-import { PlusOutlined, DeleteOutlined, CopyOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { useState, useEffect, useMemo } from 'react';
+import { Form, Input, Select, DatePicker, InputNumber, Button, Card, message, Space, Tabs, Table, Tag, Divider, Typography, Collapse, Modal, Empty, Row, Col, Badge, Popconfirm, Checkbox, DatePicker as AntDatePicker } from 'antd';
+import { PlusOutlined, DeleteOutlined, CopyOutlined, CheckCircleOutlined, SettingOutlined, EyeOutlined, CalendarOutlined, FilterOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useTasks } from '../hooks/useSupabase';
 import { CITIES, WEBSITES as DEFAULT_WEBSITES } from '../types';
 
 const { TextArea } = Input;
-const { Text } = Typography;
+const { Text, Title } = Typography;
 const { Panel } = Collapse;
 
 // 提示词类型接口
@@ -302,366 +302,645 @@ function SingleTaskForm({ onSubmit, loading }: { onSubmit: (values: any) => void
   );
 }
 
-// 批量任务创建
-function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void; loading: boolean }) {
-  const [step, setStep] = useState<1 | 2>(1);
-  const [deadline, setDeadline] = useState<dayjs.Dayjs | null>(null);
-  const promptTypes = usePromptTypes();
+// 网站配置项
+interface WebsiteConfig {
+  websiteId: string;
+  count: number;
+  notes: string[]; // 每篇文章的备注
+}
 
-  // 创建空的 quantity row
-  const createEmptyQuantityRow = (): QuantityRow => {
-    const row: any = { city: '' };
+// 批量任务行数据
+interface BatchTaskRow {
+  id: string;
+  city: string;
+  totalCount: number;
+  deadline: dayjs.Dayjs;
+  promptTypeConfigs: Record<string, WebsiteConfig[]>; // key: promptTypeId
+}
+
+// 批量任务创建 - 新设计
+function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void; loading: boolean }) {
+  const [activeTab, setActiveTab] = useState<'create' | 'created'>('create');
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [detailRowId, setDetailRowId] = useState<string | null>(null);
+  const promptTypes = usePromptTypes();
+  const [managedWebsites, setManagedWebsites] = useState<{id: string; name: string; platform: string}[]>([]);
+  
+  // 加载管理的网站
+  useEffect(() => {
+    const saved = localStorage.getItem('managedWebsites');
+    if (saved) {
+      try {
+        setManagedWebsites(JSON.parse(saved));
+      } catch {
+        setManagedWebsites([]);
+      }
+    }
+  }, []);
+
+  // 创建空行
+  const createEmptyRow = (): BatchTaskRow => {
+    const configs: Record<string, WebsiteConfig[]> = {};
     promptTypes.forEach(type => {
-      row[type.id] = 0;
+      configs[type.id] = [];
     });
-    return row as QuantityRow;
+    return {
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      city: '',
+      totalCount: 0,
+      deadline: dayjs().add(7, 'day'),
+      promptTypeConfigs: configs,
+    };
   };
 
-  const [quantityData, setQuantityData] = useState<QuantityRow[]>([createEmptyQuantityRow()]);
-  const [articleConfigs, setArticleConfigs] = useState<ArticleConfig[]>([]);
+  const [rows, setRows] = useState<BatchTaskRow[]>([createEmptyRow()]);
+  const [previewVisible, setPreviewVisible] = useState(false);
 
-  // 当提示词类型变化时，重置数量数据
+  // 当提示词类型变化时，重置数据
   useEffect(() => {
-    setQuantityData([createEmptyQuantityRow()]);
+    if (promptTypes.length > 0) {
+      setRows([createEmptyRow()]);
+    }
   }, [promptTypes.length]);
 
-  // 步骤1：数量矩阵表格列
-  const quantityColumns = [
+  // 添加行
+  const addRow = () => {
+    setRows([...rows, createEmptyRow()]);
+  };
+
+  // 删除行
+  const removeRow = (id: string) => {
+    if (rows.length <= 1) {
+      message.warning('至少保留一行');
+      return;
+    }
+    setRows(rows.filter(r => r.id !== id));
+    setSelectedRowKeys(selectedRowKeys.filter(k => k !== id));
+  };
+
+  // 删除选中行
+  const removeSelectedRows = () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择要删除的行');
+      return;
+    }
+    if (rows.length - selectedRowKeys.length < 1) {
+      message.warning('至少保留一行');
+      return;
+    }
+    setRows(rows.filter(r => !selectedRowKeys.includes(r.id)));
+    setSelectedRowKeys([]);
+  };
+
+  // 更新行数据
+  const updateRow = (id: string, updates: Partial<BatchTaskRow>) => {
+    setRows(rows.map(row => row.id === id ? { ...row, ...updates } : row));
+  };
+
+  // 更新城市的网站配置
+  const updateWebsiteConfig = (rowId: string, promptTypeId: string, configs: WebsiteConfig[]) => {
+    setRows(rows.map(row => {
+      if (row.id !== rowId) return row;
+      const newConfigs = { ...row.promptTypeConfigs, [promptTypeId]: configs };
+      // 重新计算总数
+      let total = 0;
+      Object.values(newConfigs).forEach(typeConfigs => {
+        typeConfigs.forEach(c => total += c.count);
+      });
+      return { ...row, promptTypeConfigs: newConfigs, totalCount: total };
+    }));
+  };
+
+  // 获取网站名称
+  const getWebsiteName = (id: string) => {
+    const site = managedWebsites.find(w => w.id === id);
+    return site ? `${site.name} (${site.platform})` : id;
+  };
+
+  // 渲染网站配置单元格
+  const renderWebsiteCell = (row: BatchTaskRow, promptTypeId: string) => {
+    const configs = row.promptTypeConfigs[promptTypeId] || [];
+    const totalCount = configs.reduce((sum, c) => sum + c.count, 0);
+    
+    if (totalCount === 0) {
+      return <Text type="secondary">-</Text>;
+    }
+
+    return (
+      <Space direction="vertical" size="small" style={{ width: '100%' }}>
+        {configs.filter(c => c.count > 0).map((config, idx) => (
+          <div key={idx}>
+            <Tag>{getWebsiteName(config.websiteId)} × {config.count}</Tag>
+          </div>
+        ))}
+      </Space>
+    );
+  };
+
+  // 表格列定义
+  const columns = [
     {
       title: '城市',
       dataIndex: 'city',
       key: 'city',
-      width: 120,
-      render: (_: any, record: QuantityRow, index: number) => (
+      width: 100,
+      render: (city: string, record: BatchTaskRow) => (
         <Select
-          value={record.city || undefined}
+          value={city || undefined}
           placeholder="选择城市"
-          style={{ width: 100 }}
-          onChange={(value) => updateQuantityRow(index, 'city', value)}
+          style={{ width: 90 }}
+          onChange={(value) => updateRow(record.id, { city: value })}
+          size="small"
         >
-          {CITIES.map(city => (
-            <Select.Option key={city} value={city}>{city}</Select.Option>
+          {CITIES.map(c => (
+            <Select.Option key={c} value={c}>{c}</Select.Option>
           ))}
         </Select>
       ),
     },
-    ...promptTypes.map(type => ({
-      title: type.type,
-      dataIndex: type.id,
-      key: type.id,
-      width: 100,
-      render: (_: any, record: QuantityRow, index: number) => (
+    {
+      title: '文章总数',
+      dataIndex: 'totalCount',
+      key: 'totalCount',
+      width: 90,
+      render: (count: number, record: BatchTaskRow) => (
         <InputNumber
           min={0}
-          max={50}
-          value={record[type.id] as number || 0}
-          onChange={(value) => updateQuantityRow(index, type.id, value || 0)}
+          value={count}
+          onChange={(value) => updateRow(record.id, { totalCount: value || 0 })}
           style={{ width: 70 }}
+          size="small"
         />
       ),
+    },
+    ...promptTypes.map(type => ({
+      title: type.type,
+      key: type.id,
+      width: 150,
+      render: (_: any, record: BatchTaskRow) => renderWebsiteCell(record, type.id),
     })),
     {
-      title: '操作',
-      key: 'action',
-      width: 80,
-      render: (_: any, __: QuantityRow, index: number) => (
-        <Button
-          type="text"
-          danger
-          icon={<DeleteOutlined />}
-          onClick={() => removeQuantityRow(index)}
-          disabled={quantityData.length <= 1}
+      title: '截止日期',
+      dataIndex: 'deadline',
+      key: 'deadline',
+      width: 130,
+      render: (deadline: dayjs.Dayjs, record: BatchTaskRow) => (
+        <DatePicker
+          value={deadline}
+          onChange={(date) => updateRow(record.id, { deadline: date || dayjs() })}
+          style={{ width: 110 }}
+          size="small"
+          format="MM-DD"
         />
       ),
     },
   ];
 
-  const updateQuantityRow = (index: number, field: string, value: any) => {
-    const newData = [...quantityData];
-    newData[index] = { ...newData[index], [field]: value };
-    setQuantityData(newData);
+  // 行选择配置
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (newSelectedRowKeys: React.Key[]) => {
+      setSelectedRowKeys(newSelectedRowKeys);
+    },
   };
 
-  const addQuantityRow = () => {
-    setQuantityData([...quantityData, createEmptyQuantityRow()]);
-  };
-
-  const removeQuantityRow = (index: number) => {
-    if (quantityData.length > 1) {
-      setQuantityData(quantityData.filter((_, i) => i !== index));
-    }
-  };
-
-  // 计算总文章数
-  const getTotalArticles = () => {
-    return quantityData.reduce((sum, row) => {
-      let rowSum = 0;
-      promptTypes.forEach(type => {
-        rowSum += (row[type.id] as number) || 0;
-      });
-      return sum + rowSum;
-    }, 0);
-  };
-
-  // 生成文章配置列表
-  const generateArticleConfigs = () => {
-    const configs: ArticleConfig[] = [];
-    quantityData.forEach(row => {
+  // 生成任务数据
+  const generateTasks = () => {
+    const tasks: any[] = [];
+    rows.forEach(row => {
       if (!row.city) return;
-      promptTypes.forEach(type => {
-        const count = row[type.id] as number;
-        for (let i = 0; i < count; i++) {
-          configs.push({
-            id: `${row.city}-${type.id}-${i}`,
-            city: row.city,
-            type: type.id,
-            typeLabel: type.type,
-            websites: [],
-            writingSuggestions: '',
-          });
-        }
+      
+      // 为每个提示词类型的每个网站配置生成任务
+      Object.entries(row.promptTypeConfigs).forEach(([promptTypeId, configs]) => {
+        configs.forEach(config => {
+          for (let i = 0; i < config.count; i++) {
+            tasks.push({
+              city: row.city,
+              quantity: 1,
+              websites: [config.websiteId],
+              prompt_type: promptTypeId,
+              writing_suggestions: config.notes[i] || null,
+              deadline: row.deadline.format('YYYY-MM-DD'),
+              status: 'pending',
+              created_by: '任务创建者',
+            });
+          }
+        });
       });
     });
-    return configs;
+    return tasks;
   };
 
-  // 进入步骤2
-  const goToStep2 = () => {
-    // 验证
-    const validRows = quantityData.filter(row => {
-      if (!row.city) return false;
-      const hasArticles = promptTypes.some(type => (row[type.id] as number) > 0);
-      return hasArticles;
-    });
+  // 打开详细配置
+  const openDetailConfig = () => {
+    if (selectedRowKeys.length !== 1) {
+      message.warning('请选中一行进行详细配置');
+      return;
+    }
+    setDetailRowId(selectedRowKeys[0] as string);
+    setDetailModalVisible(true);
+  };
+
+  // 预览并创建
+  const handlePreview = () => {
+    const validRows = rows.filter(r => r.city && r.totalCount > 0);
     if (validRows.length === 0) {
       message.error('请至少填写一个城市及文章数量');
       return;
     }
-    if (!deadline) {
-      message.error('请选择截止日期');
+    setPreviewVisible(true);
+  };
+
+  // 确认创建
+  const handleCreate = async () => {
+    const tasks = generateTasks();
+    if (tasks.length === 0) {
+      message.error('没有可创建的任务');
       return;
     }
-    const configs = generateArticleConfigs();
-    setArticleConfigs(configs);
-    setStep(2);
-  };
-
-  // 更新单篇文章配置
-  const updateArticleConfig = (id: string, field: keyof ArticleConfig, value: any) => {
-    setArticleConfigs(prev => prev.map(config => 
-      config.id === id ? { ...config, [field]: value } : config
-    ));
-  };
-
-  // 批量设置同类型文章的默认配置
-  const batchSetDefault = (city: string, type: string) => {
-    const configs = articleConfigs.filter(c => c.city === city && c.type === type);
-    if (configs.length === 0) return;
-    
-    // 使用第一篇文章的配置作为默认值
-    const defaultConfig = configs[0];
-    setArticleConfigs(prev => prev.map(config => {
-      if (config.city === city && config.type === type && config.id !== defaultConfig.id) {
-        return {
-          ...config,
-          websites: [...defaultConfig.websites],
-          writingSuggestions: defaultConfig.writingSuggestions,
-        };
-      }
-      return config;
-    }));
-    message.success('已批量应用配置');
-  };
-
-  // 提交批量创建
-  const handleBatchSubmit = async () => {
-    // 验证所有文章都有网站配置
-    const invalidConfigs = articleConfigs.filter(c => c.websites.length === 0);
-    if (invalidConfigs.length > 0) {
-      message.error(`还有 ${invalidConfigs.length} 篇文章未配置发布网站`);
-      return;
-    }
-
-    const tasks = articleConfigs.map(config => ({
-      city: config.city,
-      quantity: 1,
-      websites: config.websites,
-      prompt_type: config.type,
-      writing_suggestions: config.writingSuggestions || null,
-      deadline: deadline!.format('YYYY-MM-DD'),
-      status: 'pending',
-      created_by: '任务创建者',
-    }));
-
     await onSubmit(tasks);
-    // 重置
-    setStep(1);
-    setQuantityData([createEmptyQuantityRow()]);
-    setDeadline(null);
-    setArticleConfigs([]);
+    setPreviewVisible(false);
+    setRows([createEmptyRow()]);
+    setSelectedRowKeys([]);
   };
 
-  // 按城市和类型分组显示
-  const groupedConfigs = articleConfigs.reduce((groups, config) => {
-    const key = `${config.city}-${config.type}`;
-    if (!groups[key]) {
-      groups[key] = {
-        city: config.city,
-        type: config.type,
-        typeLabel: config.typeLabel,
-        configs: [],
-      };
-    }
-    groups[key].configs.push(config);
-    return groups;
-  }, {} as Record<string, { city: string; type: string; typeLabel: string; configs: ArticleConfig[] }>);
+  // 计算统计
+  const stats = useMemo(() => {
+    const totalCities = rows.filter(r => r.city).length;
+    const totalArticles = rows.reduce((sum, r) => sum + r.totalCount, 0);
+    const typeStats: Record<string, number> = {};
+    rows.forEach(row => {
+      Object.entries(row.promptTypeConfigs).forEach(([typeId, configs]) => {
+        const count = configs.reduce((s, c) => s + c.count, 0);
+        typeStats[typeId] = (typeStats[typeId] || 0) + count;
+      });
+    });
+    return { totalCities, totalArticles, typeStats };
+  }, [rows]);
 
-  if (step === 1) {
-    // 如果没有提示词类型，显示提示
-    if (promptTypes.length === 0) {
-      return (
-        <Empty
-          description={
-            <Space direction="vertical" size="small">
-              <Text>暂无提示词类型</Text>
-              <Text type="secondary">请先在"内容生成者 → 文章提示词管理"中添加提示词类型</Text>
-            </Space>
-          }
-        />
-      );
-    }
-
+  // 如果没有提示词类型，显示提示
+  if (promptTypes.length === 0) {
     return (
-      <Space direction="vertical" style={{ width: '100%' }} size="large">
-        <div>
-          <Text type="secondary">步骤 1：填写每个城市各类型文章的数量</Text>
-        </div>
-
-        <Table
-          dataSource={quantityData.map((row, i) => ({ ...row, key: i }))}
-          columns={quantityColumns}
-          pagination={false}
-          size="small"
-          bordered
-        />
-        
-        <Button type="dashed" onClick={addQuantityRow} block icon={<PlusOutlined />}>
-          添加城市
-        </Button>
-
-        <Form.Item
-          label="截止日期"
-          required
-          style={{ marginTop: 16 }}
-        >
-          <DatePicker
-            style={{ width: '100%' }}
-            value={deadline}
-            onChange={setDeadline}
-            disabledDate={(current) => current && current < dayjs().startOf('day')}
-            placeholder="请选择所有任务的截止日期"
-          />
-        </Form.Item>
-
-        <div style={{ textAlign: 'right' }}>
-          <Text type="secondary">共 {getTotalArticles()} 篇文章 </Text>
-          <Button 
-            type="primary" 
-            onClick={goToStep2}
-            disabled={getTotalArticles() === 0}
-            style={{ marginLeft: 16 }}
-          >
-            下一步：配置详情
-          </Button>
-        </div>
-      </Space>
+      <Empty
+        description={
+          <Space direction="vertical" size="small">
+            <Text>暂无提示词类型</Text>
+            <Text type="secondary">请先在"内容生成者 → 文章提示词管理"中添加提示词类型</Text>
+          </Space>
+        }
+      />
     );
   }
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size="large">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text type="secondary">步骤 2：逐篇配置网站和特殊要求</Text>
-        <Button onClick={() => setStep(1)}>返回上一步</Button>
-      </div>
+    <>
+      <Tabs
+        activeKey={activeTab}
+        onChange={(key) => setActiveTab(key as 'create' | 'created')}
+        items={[
+          {
+            key: 'create',
+            label: '批量创建',
+            children: (
+              <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                <Table
+                  rowSelection={rowSelection}
+                  dataSource={rows}
+                  columns={columns}
+                  pagination={false}
+                  size="small"
+                  bordered
+                  rowKey="id"
+                  scroll={{ x: 'max-content' }}
+                />
 
-      <Collapse defaultActiveKey={Object.keys(groupedConfigs)}>
-        {Object.values(groupedConfigs).map((group) => (
-          <Panel 
-            header={
-              <Space>
-                <Tag color="blue">{group.city}</Tag>
-                <Tag>{group.typeLabel}</Tag>
-                <Text type="secondary">共 {group.configs.length} 篇</Text>
+                <Space>
+                  <Button type="primary" icon={<PlusOutlined />} onClick={addRow}>
+                    添加行
+                  </Button>
+                  <Button danger icon={<DeleteOutlined />} onClick={removeSelectedRows} disabled={selectedRowKeys.length === 0}>
+                    删除选中
+                  </Button>
+                  <Button icon={<SettingOutlined />} onClick={openDetailConfig} disabled={selectedRowKeys.length !== 1}>
+                    详细配置
+                  </Button>
+                  <Button type="primary" icon={<EyeOutlined />} onClick={handlePreview}>
+                    预览并全部创建
+                  </Button>
+                </Space>
+
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  选中单元格后：⌘+C 复制  ⌘+V 粘贴  Delete 清空
+                </Text>
+
+                <Card size="small" style={{ background: '#f6ffed' }}>
+                  <Row gutter={16}>
+                    <Col>统计：共 {stats.totalCities} 个城市，{stats.totalArticles} 篇文章</Col>
+                    {promptTypes.map(type => (
+                      <Col key={type.id}>
+                        {type.type}：{stats.typeStats[type.id] || 0} 篇
+                      </Col>
+                    ))}
+                  </Row>
+                </Card>
               </Space>
-            } 
-            key={`${group.city}-${group.type}`}
-          >
-            <Space direction="vertical" style={{ width: '100%' }} size="middle">
-              {group.configs.length > 1 && (
-                <Button 
-                  type="link" 
-                  icon={<CopyOutlined />}
-                  onClick={() => batchSetDefault(group.city, group.type)}
-                >
-                  将第一篇的配置应用到本组其他文章
-                </Button>
-              )}
-              
-              {group.configs.map((config, index) => (
-                <Card 
-                  key={config.id} 
-                  size="small" 
-                  title={`第 ${index + 1} 篇`}
-                  extra={
-                    config.websites.length > 0 && 
-                    <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                  }
-                >
+            ),
+          },
+          {
+            key: 'created',
+            label: '已创建任务',
+            children: <CreatedTasksList />,
+          },
+        ]}
+      />
+
+      {/* 详细配置弹窗 */}
+      <Modal
+        title="详细配置"
+        open={detailModalVisible}
+        onCancel={() => setDetailModalVisible(false)}
+        width={800}
+        footer={[
+          <Button key="close" onClick={() => setDetailModalVisible(false)}>关闭</Button>,
+        ]}
+      >
+        {detailRowId && (
+          <DetailConfigPanel
+            row={rows.find(r => r.id === detailRowId)!}
+            promptTypes={promptTypes}
+            managedWebsites={managedWebsites}
+            onUpdate={(configs) => updateWebsiteConfig(detailRowId, configs.promptTypeId, configs.websiteConfigs)}
+          />
+        )}
+      </Modal>
+
+      {/* 预览弹窗 */}
+      <Modal
+        title="确认创建任务"
+        open={previewVisible}
+        onCancel={() => setPreviewVisible(false)}
+        onOk={handleCreate}
+        confirmLoading={loading}
+        width={700}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Text>共 {stats.totalCities} 个城市，{stats.totalArticles} 篇文章，将全部创建</Text>
+          <Table
+            dataSource={rows.filter(r => r.city)}
+            columns={[
+              { title: '城市', dataIndex: 'city', key: 'city' },
+              { title: '文章总数', dataIndex: 'totalCount', key: 'totalCount' },
+              ...promptTypes.map(type => ({
+                title: type.type,
+                key: type.id,
+                render: (_: any, record: BatchTaskRow) => {
+                  const configs = record.promptTypeConfigs[type.id] || [];
+                  const count = configs.reduce((s, c) => s + c.count, 0);
+                  return count > 0 ? count : '-';
+                },
+              })),
+              { 
+                title: '截止日期', 
+                dataIndex: 'deadline', 
+                key: 'deadline',
+                render: (d: dayjs.Dayjs) => d.format('YYYY-MM-DD'),
+              },
+            ]}
+            pagination={false}
+            size="small"
+          />
+        </Space>
+      </Modal>
+    </>
+  );
+}
+
+// 详细配置面板
+function DetailConfigPanel({
+  row,
+  promptTypes,
+  managedWebsites,
+  onUpdate,
+}: {
+  row: BatchTaskRow;
+  promptTypes: PromptType[];
+  managedWebsites: {id: string; name: string; platform: string}[];
+  onUpdate: (configs: { promptTypeId: string; websiteConfigs: WebsiteConfig[] }) => void;
+}) {
+  const [activeType, setActiveType] = useState(promptTypes[0]?.id);
+
+  const addWebsiteConfig = (promptTypeId: string) => {
+    const configs = row.promptTypeConfigs[promptTypeId] || [];
+    onUpdate({
+      promptTypeId,
+      websiteConfigs: [...configs, { websiteId: '', count: 1, notes: [] }],
+    });
+  };
+
+  const updateConfig = (promptTypeId: string, index: number, updates: Partial<WebsiteConfig>) => {
+    const configs = [...(row.promptTypeConfigs[promptTypeId] || [])];
+    configs[index] = { ...configs[index], ...updates };
+    onUpdate({ promptTypeId, websiteConfigs: configs });
+  };
+
+  const removeConfig = (promptTypeId: string, index: number) => {
+    const configs = (row.promptTypeConfigs[promptTypeId] || []).filter((_, i) => i !== index);
+    onUpdate({ promptTypeId, websiteConfigs: configs });
+  };
+
+  const updateNote = (promptTypeId: string, configIndex: number, noteIndex: number, value: string) => {
+    const configs = [...(row.promptTypeConfigs[promptTypeId] || [])];
+    const config = configs[configIndex];
+    const newNotes = [...config.notes];
+    newNotes[noteIndex] = value;
+    configs[configIndex] = { ...config, notes: newNotes };
+    onUpdate({ promptTypeId, websiteConfigs: configs });
+  };
+
+  return (
+    <div>
+      <Title level={5}>{row.city} - 详细配置</Title>
+      <Tabs activeKey={activeType} onChange={setActiveType}>
+        {promptTypes.map(type => (
+          <Tabs.TabPane tab={type.type} key={type.id}>
+            <Space direction="vertical" style={{ width: '100%' }}>
+              {(row.promptTypeConfigs[type.id] || []).map((config, idx) => (
+                <Card key={idx} size="small" title={`配置 ${idx + 1}`}>
                   <Space direction="vertical" style={{ width: '100%' }}>
-                    <div>
-                      <Text type="secondary">发布网站：</Text>
-                      <div style={{ marginTop: 8 }}>
-                        <CustomWebsiteSelect
-                          value={config.websites}
-                          onChange={(value) => updateArticleConfig(config.id, 'websites', value)}
-                          placeholder="请选择或添加发布网站"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <Text type="secondary">特殊要求：</Text>
-                      <TextArea
-                        value={config.writingSuggestions}
-                        onChange={(e) => updateArticleConfig(config.id, 'writingSuggestions', e.target.value)}
-                        placeholder="如：不许有表格、需要包含图片等（可选）"
-                        rows={2}
-                        style={{ marginTop: 8 }}
+                    <Space>
+                      <Select
+                        value={config.websiteId || undefined}
+                        placeholder="选择网站"
+                        style={{ width: 200 }}
+                        onChange={(value) => updateConfig(type.id, idx, { websiteId: value })}
+                      >
+                        {managedWebsites.map(w => (
+                          <Select.Option key={w.id} value={w.id}>
+                            {w.name} ({w.platform})
+                          </Select.Option>
+                        ))}
+                      </Select>
+                      <InputNumber
+                        min={1}
+                        value={config.count}
+                        onChange={(value) => updateConfig(type.id, idx, { count: value || 1 })}
+                        style={{ width: 80 }}
                       />
-                    </div>
+                      <Button danger size="small" onClick={() => removeConfig(type.id, idx)}>
+                        删除
+                      </Button>
+                    </Space>
+                    
+                    {/* 每篇文章的备注 */}
+                    {Array.from({ length: config.count }).map((_, noteIdx) => (
+                      <Input
+                        key={noteIdx}
+                        placeholder={`文章 ${noteIdx + 1} 备注`}
+                        value={config.notes[noteIdx] || ''}
+                        onChange={(e) => updateNote(type.id, idx, noteIdx, e.target.value)}
+                        size="small"
+                      />
+                    ))}
                   </Space>
                 </Card>
               ))}
+              <Button type="dashed" block icon={<PlusOutlined />} onClick={() => addWebsiteConfig(type.id)}>
+                添加网站配置
+              </Button>
             </Space>
-          </Panel>
+          </Tabs.TabPane>
         ))}
-      </Collapse>
+      </Tabs>
+    </div>
+  );
+}
 
-      <Divider />
+// 已创建任务列表
+function CreatedTasksList() {
+  const { tasks, loading, refreshTasks } = useTasks();
+  const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const promptTypes = usePromptTypes();
 
-      <div style={{ textAlign: 'right' }}>
-        <Text type="secondary">将创建 {articleConfigs.length} 个独立任务 </Text>
-        <Button 
-          type="primary" 
-          onClick={handleBatchSubmit}
-          loading={loading}
-          icon={<PlusOutlined />}
-          style={{ marginLeft: 16 }}
-          size="large"
-        >
-          确认创建
-        </Button>
-      </div>
+  // 过滤任务
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(task => {
+      const taskDate = dayjs(task.deadline);
+      const dateMatch = taskDate.format('YYYY-MM-DD') === selectedDate.format('YYYY-MM-DD');
+      
+      if (statusFilter === 'all') return dateMatch;
+      if (statusFilter === 'draft') return dateMatch && task.status === 'pending';
+      if (statusFilter === 'ready') return dateMatch && task.status === 'in_progress';
+      if (statusFilter === 'completed') return dateMatch && task.status === 'completed';
+      return dateMatch;
+    });
+  }, [tasks, selectedDate, statusFilter]);
+
+  // 按城市和提示词类型分组统计
+  const groupedStats = useMemo(() => {
+    const groups: Record<string, { city: string; promptType: string; count: number; status: string }> = {};
+    filteredTasks.forEach(task => {
+      const key = `${task.city}-${task.prompt_type}`;
+      if (!groups[key]) {
+        groups[key] = {
+          city: task.city,
+          promptType: task.prompt_type,
+          count: 0,
+          status: task.status,
+        };
+      }
+      groups[key].count += task.quantity;
+    });
+    return Object.values(groups);
+  }, [filteredTasks]);
+
+  // 获取提示词类型名称
+  const getPromptTypeName = (id: string) => {
+    const type = promptTypes.find(t => t.id === id);
+    return type?.type || id;
+  };
+
+  // 获取状态标签
+  const getStatusTag = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <Badge status="success" text="已完成" />;
+      case 'in_progress':
+        return <Badge status="processing" text="待发布" />;
+      default:
+        return <Badge status="default" text="未生成" />;
+    }
+  };
+
+  const columns = [
+    {
+      title: '城市',
+      dataIndex: 'city',
+      key: 'city',
+    },
+    {
+      title: '文章数量',
+      dataIndex: 'count',
+      key: 'count',
+    },
+    {
+      title: '提示词类型',
+      dataIndex: 'promptType',
+      key: 'promptType',
+      render: (id: string) => getPromptTypeName(id),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status: string) => getStatusTag(status),
+    },
+  ];
+
+  // 统计
+  const stats = useMemo(() => {
+    const total = filteredTasks.reduce((sum, t) => sum + t.quantity, 0);
+    const draft = filteredTasks.filter(t => t.status === 'pending').reduce((sum, t) => sum + t.quantity, 0);
+    const ready = filteredTasks.filter(t => t.status === 'in_progress').reduce((sum, t) => sum + t.quantity, 0);
+    const completed = filteredTasks.filter(t => t.status === 'completed').reduce((sum, t) => sum + t.quantity, 0);
+    return { total, draft, ready, completed };
+  }, [filteredTasks]);
+
+  return (
+    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+      <Space>
+        <DatePicker
+          value={selectedDate}
+          onChange={(date) => date && setSelectedDate(date)}
+          format="YYYY-MM-DD"
+        />
+        <Select value={statusFilter} onChange={setStatusFilter} style={{ width: 120 }}>
+          <Select.Option value="all">全部</Select.Option>
+          <Select.Option value="draft">未生成</Select.Option>
+          <Select.Option value="ready">待发布</Select.Option>
+          <Select.Option value="completed">已完成</Select.Option>
+        </Select>
+        <Button icon={<FilterOutlined />} onClick={refreshTasks}>刷新</Button>
+      </Space>
+
+      <Table
+        dataSource={groupedStats}
+        columns={columns}
+        pagination={false}
+        size="small"
+        loading={loading}
+        rowKey={(record) => `${record.city}-${record.promptType}`}
+      />
+
+      <Card size="small" style={{ background: '#f6ffed' }}>
+        <Row gutter={16}>
+          <Col>共 {filteredTasks.length} 个任务，{stats.total} 篇文章</Col>
+          <Col style={{ color: '#999' }}>未生成: {stats.draft}</Col>
+          <Col style={{ color: '#1890ff' }}>待发布: {stats.ready}</Col>
+          <Col style={{ color: '#52c41a' }}>已完成: {stats.completed}</Col>
+        </Row>
+      </Card>
     </Space>
   );
 }
