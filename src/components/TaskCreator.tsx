@@ -324,6 +324,7 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [detailRowId, setDetailRowId] = useState<string | null>(null);
+  const [activePromptType, setActivePromptType] = useState<string>('');
   const promptTypes = usePromptTypes();
   const [managedWebsites, setManagedWebsites] = useState<{id: string; name: string; platform: string}[]>([]);
   
@@ -418,13 +419,25 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
     return site ? `${site.name} (${site.platform})` : id;
   };
 
-  // 渲染网站配置单元格
+  // 渲染网站配置单元格 - 可点击编辑
   const renderWebsiteCell = (row: BatchTaskRow, promptTypeId: string) => {
     const configs = row.promptTypeConfigs[promptTypeId] || [];
     const totalCount = configs.reduce((sum, c) => sum + c.count, 0);
     
     if (totalCount === 0) {
-      return <Text type="secondary">-</Text>;
+      return (
+        <Button 
+          type="link" 
+          size="small" 
+          onClick={() => {
+            setDetailRowId(row.id);
+            setActivePromptType(promptTypeId);
+            setDetailModalVisible(true);
+          }}
+        >
+          配置网站
+        </Button>
+      );
     }
 
     return (
@@ -434,6 +447,17 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
             <Tag>{getWebsiteName(config.websiteId)} × {config.count}</Tag>
           </div>
         ))}
+        <Button 
+          type="link" 
+          size="small"
+          onClick={() => {
+            setDetailRowId(row.id);
+            setActivePromptType(promptTypeId);
+            setDetailModalVisible(true);
+          }}
+        >
+          编辑
+        </Button>
       </Space>
     );
   };
@@ -444,19 +468,14 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
       title: '城市',
       dataIndex: 'city',
       key: 'city',
-      width: 100,
+      width: 120,
       render: (city: string, record: BatchTaskRow) => (
-        <Select
-          value={city || undefined}
-          placeholder="选择城市"
-          style={{ width: 90 }}
-          onChange={(value) => updateRow(record.id, { city: value })}
+        <Input
+          value={city}
+          placeholder="输入城市"
+          onChange={(e) => updateRow(record.id, { city: e.target.value })}
           size="small"
-        >
-          {CITIES.map(c => (
-            <Select.Option key={c} value={c}>{c}</Select.Option>
-          ))}
-        </Select>
+        />
       ),
     },
     {
@@ -670,6 +689,7 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
             row={rows.find(r => r.id === detailRowId)!}
             promptTypes={promptTypes}
             managedWebsites={managedWebsites}
+            defaultActiveType={activePromptType}
             onUpdate={(configs) => updateWebsiteConfig(detailRowId, configs.promptTypeId, configs.websiteConfigs)}
           />
         )}
@@ -721,14 +741,16 @@ function DetailConfigPanel({
   row,
   promptTypes,
   managedWebsites,
+  defaultActiveType,
   onUpdate,
 }: {
   row: BatchTaskRow;
   promptTypes: PromptType[];
   managedWebsites: {id: string; name: string; platform: string}[];
+  defaultActiveType?: string;
   onUpdate: (configs: { promptTypeId: string; websiteConfigs: WebsiteConfig[] }) => void;
 }) {
-  const [activeType, setActiveType] = useState(promptTypes[0]?.id);
+  const [activeType, setActiveType] = useState(defaultActiveType || promptTypes[0]?.id);
 
   const addWebsiteConfig = (promptTypeId: string) => {
     const configs = row.promptTypeConfigs[promptTypeId] || [];
