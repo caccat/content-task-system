@@ -294,13 +294,11 @@ function App() {
       case 'creator':
         switch (creatorSubPage) {
           case 'single':
-            return <TaskCreator defaultTab="single" />;
           case 'batch':
-            return <TaskCreator defaultTab="batch" />;
           case 'websites':
-            return <WebsiteManager />;
+            return <TaskCreator />;
           default:
-            return <TaskCreator defaultTab="single" />;
+            return <TaskCreator />;
         }
       case 'writer':
         switch (writerSubPage) {
@@ -331,7 +329,7 @@ function App() {
       case 'settings':
         return <Settings />;
       default:
-        return <TaskCreator defaultTab="single" />;
+        return <TaskCreator />;
     }
   };
 
