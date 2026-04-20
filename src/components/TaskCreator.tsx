@@ -287,7 +287,7 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
       city: '',
       totalCount: 0,
-      deadline: dayjs().add(7, 'day'),
+      deadline: dayjs(),
       promptTypeConfigs: configs,
     };
   };
@@ -943,6 +943,9 @@ function ArticleEditModal({
   // 当 article 变化时，重置表单值
   useEffect(() => {
     if (article && visible) {
+      console.log('ArticleEditModal - article data:', article);
+      console.log('ArticleEditModal - website:', article.website);
+      console.log('ArticleEditModal - notes:', article.notes);
       form.setFieldsValue({
         website: article.website || undefined,
         notes: article.notes || '',
