@@ -3,7 +3,8 @@ import { Form, Input, Select, DatePicker, InputNumber, Button, Card, message, Sp
 import { PlusOutlined, DeleteOutlined, CopyOutlined, CheckCircleOutlined, SettingOutlined, EyeOutlined, CalendarOutlined, FilterOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useTasks } from '../hooks/useSupabase';
-import { CITIES, WEBSITES as DEFAULT_WEBSITES } from '../types';
+import { supabase } from '../supabase';
+import { CITIES, WEBSITES as DEFAULT_WEBSITES, Article } from '../types';
 
 const { TextArea } = Input;
 const { Text, Title } = Typography;
@@ -967,12 +968,69 @@ function DetailConfigPanel({
   );
 }
 
+// 进度条组件
+function ProgressBar({ percent, color, icon, label, onClick }: { percent: number; color: string; icon: string; label: string; onClick?: () => void }) {
+  return (
+    <div style={{ cursor: onClick ? 'pointer' : 'default', marginBottom: 4 }} onClick={onClick}>
+      <Space size="small">
+        <span style={{ fontSize: 14 }}>{icon}</span>
+        <div style={{ width: 120, background: '#f0f0f0', borderRadius: 4, height: 16, overflow: 'hidden' }}>
+          <div style={{ width: `${percent}%`, background: color, height: '100%', transition: 'width 0.3s' }} />
+        </div>
+        <Text style={{ fontSize: 12, width: 40 }}>{percent}%</Text>
+      </Space>
+    </div>
+  );
+}
+
+// 文章详情弹窗
+function ArticleDetailModal({ 
+  visible, 
+  onCancel, 
+  articles, 
+  title,
+  onDelete,
+  onEdit 
+}: { 
+  visible: boolean; 
+  onCancel: () => void; 
+  articles: Article[]; 
+  title: string;
+  onDelete: (article: Article) => void;
+  onEdit: (article: Article) => void;
+}) {
+  const columns = [
+    { title: 'ID', dataIndex: 'id', key: 'id', width: 80, render: (id: string) => id.slice(0, 8) + '...' },
+    { title: '内容预览', dataIndex: 'content', key: 'content', render: (content: string) => content?.slice(0, 50) + '...' || '无内容' },
+    { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (s: string) => s === 'published' ? '已发布' : s === 'ready' ? '待发布' : '草稿' },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      render: (_: any, record: Article) => (
+        <Space size="small">
+          <Button type="link" size="small" onClick={() => onEdit(record)}>编辑</Button>
+          <Popconfirm title="确定删除?" onConfirm={() => onDelete(record)}>
+            <Button type="link" danger size="small">删除</Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <Modal title={title} open={visible} onCancel={onCancel} footer={null} width={800}>
+      <Table dataSource={articles} columns={columns} rowKey="id" size="small" pagination={{ pageSize: 10 }} />
+    </Modal>
+  );
+}
+
 // 已创建任务列表
 function CreatedTasksList() {
   const { tasks, loading, error, refreshTasks, deleteTask } = useTasks();
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [detailModal, setDetailModal] = useState<{ visible: boolean; articles: Article[]; title: string }>({ visible: false, articles: [], title: '' });
   const promptTypes = usePromptTypes();
 
   // 如果有错误，显示错误信息
@@ -989,35 +1047,56 @@ function CreatedTasksList() {
     );
   }
 
-  // 过滤任务
+  // 过滤任务（按日期）
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
       const taskDate = dayjs(task.deadline);
-      const dateMatch = taskDate.format('YYYY-MM-DD') === selectedDate.format('YYYY-MM-DD');
-      
-      if (statusFilter === 'all') return dateMatch;
-      if (statusFilter === 'draft') return dateMatch && task.status === 'pending';
-      if (statusFilter === 'ready') return dateMatch && task.status === 'in_progress';
-      if (statusFilter === 'completed') return dateMatch && task.status === 'completed';
-      return dateMatch;
+      return taskDate.format('YYYY-MM-DD') === selectedDate.format('YYYY-MM-DD');
     });
-  }, [tasks, selectedDate, statusFilter]);
+  }, [tasks, selectedDate]);
 
-  // 按城市和提示词类型分组统计
+  // 按城市和提示词类型分组统计（基于文章真实状态）
   const groupedStats = useMemo(() => {
-    const groups: Record<string, { city: string; promptType: string; count: number; status: string }> = {};
+    const groups: Record<string, { 
+      city: string; 
+      promptType: string; 
+      total: number;
+      draft: number;
+      ready: number;
+      published: number;
+      articles: Article[];
+    }> = {};
+    
     filteredTasks.forEach(task => {
       const key = `${task.city}-${task.prompt_type}`;
       if (!groups[key]) {
         groups[key] = {
           city: task.city,
           promptType: task.prompt_type,
-          count: 0,
-          status: task.status,
+          total: 0,
+          draft: 0,
+          ready: 0,
+          published: 0,
+          articles: [],
         };
       }
-      groups[key].count += task.quantity;
+      
+      // 统计文章状态
+      const taskArticles = task.articles || [];
+      groups[key].articles.push(...taskArticles);
+      
+      taskArticles.forEach(article => {
+        groups[key].total++;
+        if (article.status === 'published') {
+          groups[key].published++;
+        } else if (article.status === 'ready') {
+          groups[key].ready++;
+        } else {
+          groups[key].draft++;
+        }
+      });
     });
+    
     return Object.values(groups);
   }, [filteredTasks]);
 
@@ -1027,35 +1106,35 @@ function CreatedTasksList() {
     return type?.type || id;
   };
 
-  // 获取状态标签
-  const getStatusTag = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return <Badge status="success" text="已完成" />;
-      case 'in_progress':
-        return <Badge status="processing" text="待发布" />;
-      default:
-        return <Badge status="default" text="未生成" />;
+  // 打开文章详情
+  const openArticleDetail = (record: any, type: 'draft' | 'ready' | 'published') => {
+    const filtered = record.articles.filter((a: Article) => {
+      if (type === 'draft') return a.status === 'draft';
+      if (type === 'ready') return a.status === 'ready';
+      return a.status === 'published';
+    });
+    
+    const titles = { draft: '生产中的文章', ready: '待发布的文章', published: '已完成的文章' };
+    setDetailModal({ visible: true, articles: filtered, title: `${record.city} - ${titles[type]}` });
+  };
+
+  // 处理文章删除
+  const handleDeleteArticle = async (article: Article) => {
+    try {
+      const { error } = await supabase.from('articles').delete().eq('id', article.id);
+      if (error) throw error;
+      message.success('删除成功');
+      refreshTasks();
+      setDetailModal(prev => ({ ...prev, articles: prev.articles.filter(a => a.id !== article.id) }));
+    } catch {
+      message.error('删除失败');
     }
   };
 
-  // 处理单条删除
-  const handleDelete = async (record: any) => {
-    try {
-      // 需要找到对应的所有任务 ID
-      const tasksToDelete = filteredTasks.filter(
-        t => t.city === record.city && t.prompt_type === record.promptType
-      );
-      
-      for (const task of tasksToDelete) {
-        await deleteTask(task.id);
-      }
-      
-      message.success('删除成功');
-      refreshTasks();
-    } catch (err) {
-      message.error('删除失败');
-    }
+  // 处理文章编辑
+  const handleEditArticle = (article: Article) => {
+    // TODO: 实现编辑功能
+    message.info('编辑功能待实现');
   };
 
   // 处理批量删除
@@ -1091,39 +1170,77 @@ function CreatedTasksList() {
       title: '城市',
       dataIndex: 'city',
       key: 'city',
+      width: 100,
     },
     {
       title: '文章数量',
-      dataIndex: 'count',
-      key: 'count',
+      dataIndex: 'total',
+      key: 'total',
+      width: 80,
     },
     {
       title: '提示词类型',
       dataIndex: 'promptType',
       key: 'promptType',
+      width: 120,
       render: (id: string) => getPromptTypeName(id),
     },
     {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: string) => getStatusTag(status),
+      title: '进度分布',
+      key: 'progress',
+      width: 280,
+      render: (_: any, record: any) => (
+        <div>
+          <ProgressBar 
+            percent={record.total > 0 ? Math.round((record.draft + record.ready + record.published) / record.total * 100) : 0}
+            color="#1890ff"
+            icon="📝"
+            label="生产"
+            onClick={() => openArticleDetail(record, 'draft')}
+          />
+          <ProgressBar 
+            percent={record.total > 0 ? Math.round((record.ready + record.published) / record.total * 100) : 0}
+            color="#fa8c16"
+            icon="🚀"
+            label="发布"
+            onClick={() => openArticleDetail(record, 'ready')}
+          />
+          <ProgressBar 
+            percent={record.total > 0 ? Math.round(record.published / record.total * 100) : 0}
+            color="#52c41a"
+            icon="✅"
+            label="完成"
+            onClick={() => openArticleDetail(record, 'published')}
+          />
+        </div>
+      ),
     },
     {
       title: '操作',
       key: 'action',
       width: 80,
-      render: (_: any, record: any) => (
-        <Popconfirm
-          title="确定删除?"
-          description={`删除 ${record.city} 的 ${record.count} 篇文章`}
-          onConfirm={() => handleDelete(record)}
-          okText="确定"
-          cancelText="取消"
-        >
-          <Button type="link" danger size="small">删除</Button>
-        </Popconfirm>
-      ),
+      render: (_: any, record: any) => {
+        const tasksToDelete = filteredTasks.filter(
+          t => t.city === record.city && t.prompt_type === record.promptType
+        );
+        return (
+          <Popconfirm
+            title="确定删除?"
+            description={`删除 ${record.city} 的 ${record.total} 篇文章`}
+            onConfirm={async () => {
+              for (const task of tasksToDelete) {
+                await deleteTask(task.id);
+              }
+              message.success('删除成功');
+              refreshTasks();
+            }}
+            okText="确定"
+            cancelText="取消"
+          >
+            <Button type="link" danger size="small">删除</Button>
+          </Popconfirm>
+        );
+      },
     },
   ];
 
@@ -1137,12 +1254,12 @@ function CreatedTasksList() {
 
   // 统计
   const stats = useMemo(() => {
-    const total = filteredTasks.reduce((sum, t) => sum + t.quantity, 0);
-    const draft = filteredTasks.filter(t => t.status === 'pending').reduce((sum, t) => sum + t.quantity, 0);
-    const ready = filteredTasks.filter(t => t.status === 'in_progress').reduce((sum, t) => sum + t.quantity, 0);
-    const completed = filteredTasks.filter(t => t.status === 'completed').reduce((sum, t) => sum + t.quantity, 0);
-    return { total, draft, ready, completed };
-  }, [filteredTasks]);
+    const total = groupedStats.reduce((sum, g) => sum + g.total, 0);
+    const draft = groupedStats.reduce((sum, g) => sum + g.draft, 0);
+    const ready = groupedStats.reduce((sum, g) => sum + g.ready, 0);
+    const published = groupedStats.reduce((sum, g) => sum + g.published, 0);
+    return { total, draft, ready, published };
+  }, [groupedStats]);
 
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
@@ -1152,12 +1269,6 @@ function CreatedTasksList() {
           onChange={(date) => date && setSelectedDate(date)}
           format="YYYY-MM-DD"
         />
-        <Select value={statusFilter} onChange={setStatusFilter} style={{ width: 120 }}>
-          <Select.Option value="all">全部</Select.Option>
-          <Select.Option value="draft">未生成</Select.Option>
-          <Select.Option value="ready">待发布</Select.Option>
-          <Select.Option value="completed">已完成</Select.Option>
-        </Select>
         <Button icon={<FilterOutlined />} onClick={refreshTasks}>刷新</Button>
         <Popconfirm
           title="确定批量删除?"
@@ -1185,12 +1296,21 @@ function CreatedTasksList() {
 
       <Card size="small" style={{ background: '#f6ffed' }}>
         <Row gutter={16}>
-          <Col>共 {filteredTasks.length} 个任务，{stats.total} 篇文章</Col>
-          <Col style={{ color: '#999' }}>未生成: {stats.draft}</Col>
-          <Col style={{ color: '#1890ff' }}>待发布: {stats.ready}</Col>
-          <Col style={{ color: '#52c41a' }}>已完成: {stats.completed}</Col>
+          <Col>共 {groupedStats.length} 个分组，{stats.total} 篇文章</Col>
+          <Col style={{ color: '#999' }}>📝 生产中: {stats.draft}</Col>
+          <Col style={{ color: '#fa8c16' }}>🚀 待发布: {stats.ready}</Col>
+          <Col style={{ color: '#52c41a' }}>✅ 已完成: {stats.published}</Col>
         </Row>
       </Card>
+
+      <ArticleDetailModal
+        visible={detailModal.visible}
+        onCancel={() => setDetailModal(prev => ({ ...prev, visible: false }))}
+        articles={detailModal.articles}
+        title={detailModal.title}
+        onDelete={handleDeleteArticle}
+        onEdit={handleEditArticle}
+      />
     </Space>
   );
 }
