@@ -2,38 +2,17 @@ import { useState, useMemo, useEffect } from 'react';
 import { Card, List, Badge, Tag, Button, Checkbox, message, Typography, Space, Progress, Modal, Input, Select, Row, Col, DatePicker } from 'antd';
 import { CheckCircleOutlined, GlobalOutlined, DeleteOutlined, ExclamationCircleOutlined, CopyOutlined, FilterOutlined, CalendarOutlined } from '@ant-design/icons';
 import { useTasks, useArticles } from '../hooks/useSupabase';
+import { useWebsites } from '../hooks/useWebsites';
 import type { TaskWithArticles, Article } from '../types';
 import { CITIES } from '../types';
 import dayjs from 'dayjs';
 
 const { Text, Title } = Typography;
 
-// 从 WebsiteManager 读取管理的网站
-const useManagedWebsites = () => {
-  const [websites, setWebsites] = useState<{ id: string; name: string; platform: string }[]>([]);
-
-  useEffect(() => {
-    const loadWebsites = () => {
-      const saved = localStorage.getItem('managedWebsites');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          setWebsites(parsed.map((w: any) => ({ id: w.id, name: w.name, platform: w.platform })));
-        } catch {
-          setWebsites([]);
-        }
-      }
-    };
-    loadWebsites();
-  }, []);
-
-  return websites;
-};
-
 function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; visible: boolean; onClose: () => void }) {
   const { articles, publishArticle, loading } = useArticles(task.id);
   const [showConfirm, setShowConfirm] = useState<Article | null>(null);
-  const managedWebsites = useManagedWebsites();
+  const { websites: managedWebsites, loading: websitesLoading } = useWebsites();
 
   const handlePublish = async () => {
     if (!showConfirm) return;
@@ -48,6 +27,9 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
 
   // 从 managedWebsites 获取网站显示名称
   const getWebsiteLabels = (websites: string[]) => {
+    if (websitesLoading || managedWebsites.length === 0) {
+      return ['加载中...'];
+    }
     return websites.map(w => {
       const site = managedWebsites.find(site => site.id === w);
       return site ? `${site.name} (${site.platform})` : w;
@@ -190,7 +172,7 @@ interface TaskPublisherProps {
 export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
   const { tasks, loading, error, deleteTask, refreshTasks } = useTasks();
   const [selectedTask, setSelectedTask] = useState<TaskWithArticles | null>(null);
-  const managedWebsites = useManagedWebsites();
+  const { websites: managedWebsites } = useWebsites();
 
   // 筛选状态
   const [filterCity, setFilterCity] = useState<string | undefined>(undefined);
