@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Card,
   Table,
@@ -18,43 +18,18 @@ import {
   DeleteOutlined,
   LinkOutlined,
 } from '@ant-design/icons';
+import { usePrompts } from '../hooks/usePrompts';
+import type { Prompt } from '../types';
 
 const { Title } = Typography;
 const { TextArea } = Input;
 
-interface Prompt {
-  id: string;
-  type: string;
-  content: string;
-  exampleUrl: string;
-  createdAt: string;
-}
-
-const STORAGE_KEY = 'articlePrompts';
-
 export default function PromptManager() {
-  const [prompts, setPrompts] = useState<Prompt[]>([]);
+  const { prompts, loading, createPrompt, updatePrompt, deletePrompt } = usePrompts();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
   const [form] = Form.useForm();
-
-  // 从 localStorage 加载数据
-  useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        setPrompts(JSON.parse(stored));
-      } catch {
-        setPrompts([]);
-      }
-    }
-  }, []);
-
-  // 保存到 localStorage
-  const savePrompts = (newPrompts: Prompt[]) => {
-    setPrompts(newPrompts);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrompts));
-  };
+  const [saving, setSaving] = useState(false);
 
   const handleAdd = () => {
     setEditingPrompt(null);
@@ -67,40 +42,46 @@ export default function PromptManager() {
     form.setFieldsValue({
       type: record.type,
       content: record.content,
-      exampleUrl: record.exampleUrl,
+      example_url: record.example_url,
     });
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    const newPrompts = prompts.filter((p) => p.id !== id);
-    savePrompts(newPrompts);
-    message.success('删除成功');
+  const handleDelete = async (id: string) => {
+    try {
+      await deletePrompt(id);
+      message.success('删除成功');
+    } catch {
+      message.error('删除失败');
+    }
   };
 
-  const handleSubmit = () => {
-    form.validateFields().then((values) => {
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      setSaving(true);
+
       if (editingPrompt) {
-        // 编辑
-        const newPrompts = prompts.map((p) =>
-          p.id === editingPrompt.id
-            ? { ...p, ...values }
-            : p
-        );
-        savePrompts(newPrompts);
+        await updatePrompt(editingPrompt.id, {
+          type: values.type,
+          content: values.content,
+          example_url: values.example_url || null,
+        });
         message.success('更新成功');
       } else {
-        // 新增
-        const newPrompt: Prompt = {
-          id: Date.now().toString(),
-          ...values,
-          createdAt: new Date().toISOString(),
-        };
-        savePrompts([...prompts, newPrompt]);
+        await createPrompt({
+          type: values.type,
+          content: values.content,
+          example_url: values.example_url || null,
+        });
         message.success('添加成功');
       }
       setIsModalOpen(false);
-    });
+    } catch {
+      // validation or save error
+    } finally {
+      setSaving(false);
+    }
   };
 
   const columns = [
@@ -119,8 +100,8 @@ export default function PromptManager() {
     },
     {
       title: '文章示例链接',
-      dataIndex: 'exampleUrl',
-      key: 'exampleUrl',
+      dataIndex: 'example_url',
+      key: 'example_url',
       render: (url: string) =>
         url ? (
           <a href={url} target="_blank" rel="noopener noreferrer">
@@ -173,6 +154,7 @@ export default function PromptManager() {
           columns={columns}
           dataSource={prompts}
           rowKey="id"
+          loading={loading}
           pagination={{ pageSize: 10 }}
           locale={{ emptyText: '暂无提示词，请点击右上角添加' }}
         />
@@ -186,6 +168,7 @@ export default function PromptManager() {
         width={600}
         okText="保存"
         cancelText="取消"
+        confirmLoading={saving}
       >
         <Form
           form={form}
@@ -212,7 +195,7 @@ export default function PromptManager() {
           </Form.Item>
 
           <Form.Item
-            name="exampleUrl"
+            name="example_url"
             label="文章示例链接"
             rules={[
               {

@@ -1,36 +1,43 @@
 import { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, message, Typography, Space, Divider } from 'antd';
+import { Card, Form, Input, Button, message, Typography, Space, Divider, Radio } from 'antd';
 import { SaveOutlined, BellOutlined } from '@ant-design/icons';
+import { useSettings } from '../hooks/useSettings';
 
 const { Title, Text } = Typography;
 
 export default function Settings() {
   const [form] = Form.useForm();
+  const { getSetting, setSetting, loading } = useSettings();
   const [saving, setSaving] = useState(false);
+  const [notifyMode, setNotifyMode] = useState('immediate');
 
   // 加载保存的设置
   useEffect(() => {
-    const savedWebhook = localStorage.getItem('feishu_webhook') || '';
     form.setFieldsValue({
-      feishu_webhook: savedWebhook,
+      feishu_webhook: getSetting('feishu_webhook', ''),
     });
-  }, [form]);
+    setNotifyMode(getSetting('feishu_notify_mode', 'immediate'));
+  }, [form, getSetting]);
 
   const handleSave = async (values: any) => {
     setSaving(true);
     try {
-      // 保存到 localStorage
-      if (values.feishu_webhook) {
-        localStorage.setItem('feishu_webhook', values.feishu_webhook);
-      } else {
-        localStorage.removeItem('feishu_webhook');
-      }
-      
+      await setSetting('feishu_webhook', values.feishu_webhook || '');
       message.success('设置已保存');
-    } catch (error) {
+    } catch {
       message.error('保存失败');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleNotifyModeChange = async (value: string) => {
+    try {
+      await setSetting('feishu_notify_mode', value);
+      setNotifyMode(value);
+      message.success(`已切换为${value === 'immediate' ? '即时通知' : '批量通知'}`);
+    } catch {
+      message.error('保存失败');
     }
   };
 
@@ -65,7 +72,7 @@ export default function Settings() {
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '24px' }}>
-      <Card title="系统设置" bordered={false}>
+      <Card title="系统设置" bordered={false} loading={loading}>
         <Space direction="vertical" style={{ width: '100%' }} size="large">
           <div>
             <Title level={4} style={{ margin: 0 }}>
@@ -95,6 +102,19 @@ export default function Settings() {
               />
             </Form.Item>
 
+            <Form.Item
+              label="通知模式"
+              extra="选择通知发送方式"
+            >
+              <Radio.Group
+                value={notifyMode}
+                onChange={(e) => handleNotifyModeChange(e.target.value)}
+              >
+                <Radio value="immediate">即时通知（每篇内容准备好立即发送）</Radio>
+                <Radio value="batch">批量通知（每天汇总发送一次）</Radio>
+              </Radio.Group>
+            </Form.Item>
+
             <Form.Item>
               <Space>
                 <Button
@@ -122,13 +142,6 @@ export default function Settings() {
               <li>复制生成的 Webhook 地址，粘贴到上方输入框</li>
               <li>点击「保存设置」，然后可以「发送测试消息」验证</li>
             </ol>
-          </div>
-
-          <div style={{ background: '#e6f7ff', padding: '16px', borderRadius: '8px', border: '1px solid #91d5ff' }}>
-            <Text strong style={{ color: '#1890ff' }}>提示：</Text>
-            <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
-              通知模式（即时通知/批量通知）请在<strong>内容生产者</strong>页面中选择
-            </Text>
           </div>
         </Space>
       </Card>

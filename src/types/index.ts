@@ -27,6 +27,23 @@ export interface Website {
   price: number;
 }
 
+export interface Prompt {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  type: string;
+  content: string;
+  example_url: string | null;
+}
+
+export interface AppSettings {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  key: string;
+  value: string;
+}
+
 export interface Task {
   id: string;
   created_at: string;

@@ -2,6 +2,9 @@ import { useState, useMemo, useEffect } from 'react';
 import { Card, List, Badge, Tag, Button, Modal, Input, message, Typography, Space, Progress, Popconfirm, Select, Row, Col, DatePicker, Radio } from 'antd';
 import { EditOutlined, FileTextOutlined, DeleteOutlined, ExclamationCircleOutlined, EyeOutlined, CheckCircleOutlined, UndoOutlined, FilterOutlined, CalendarOutlined, SettingOutlined } from '@ant-design/icons';
 import { useTasks, useArticles } from '../hooks/useSupabase';
+import { useSettings } from '../hooks/useSettings';
+import { usePrompts } from '../hooks/usePrompts';
+import { useWebsites } from '../hooks/useWebsites';
 import type { TaskWithArticles, Article } from '../types';
 import { CITIES } from '../types';
 import dayjs from 'dayjs';
@@ -56,61 +59,44 @@ const sendBatchFeishuNotification = async (webhook: string, tasks: TaskWithArtic
 };
 
 // 检查是否需要发送批量通知
-const checkAndSendBatchNotification = async (allTasks: TaskWithArticles[], currentTaskId: string) => {
-  const notifyMode = localStorage.getItem('feishu_notify_mode') || 'immediate';
+const checkAndSendBatchNotification = async (allTasks: TaskWithArticles[], currentTaskId: string, settings: Record<string, string>) => {
+  const notifyMode = settings['feishu_notify_mode'] || 'immediate';
   if (notifyMode !== 'batch') return;
-  
-  const feishuWebhook = localStorage.getItem('feishu_webhook');
+
+  const feishuWebhook = settings['feishu_webhook'];
   if (!feishuWebhook) return;
-  
+
   // 检查今天是否已发送过批量通知
   const today = dayjs().format('YYYY-MM-DD');
-  const lastBatchNotify = localStorage.getItem('feishu_batch_notify_date');
+  const lastBatchNotify = settings['feishu_batch_notify_date'];
   if (lastBatchNotify === today) return;
-  
+
   // 获取今天的所有任务
   const todayTasks = allTasks.filter(t => dayjs(t.deadline).format('YYYY-MM-DD') === today);
   if (todayTasks.length === 0) return;
-  
+
   // 检查每个任务的文章是否都已完成（文章数量等于任务要求的数量，且所有文章都是 ready 或 published）
   const allCompleted = todayTasks.every(task => {
     const articles = task.articles || [];
     const readyOrPublishedCount = articles.filter(a => a.status === 'ready' || a.status === 'published').length;
     return readyOrPublishedCount === task.quantity;
   });
-  
+
   if (allCompleted) {
     await sendBatchFeishuNotification(feishuWebhook, todayTasks);
-    localStorage.setItem('feishu_batch_notify_date', today);
     message.success('批量通知已发送');
   }
 };
 
 const { Text, Title } = Typography;
 
-// 从 PromptManager 读取提示词类型
+// 从 Supabase 读取提示词类型
 const usePromptTypes = () => {
-  const [promptTypes, setPromptTypes] = useState<{ id: string; type: string }[]>([]);
-
-  useEffect(() => {
-    const loadPrompts = () => {
-      const saved = localStorage.getItem('articlePrompts');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          setPromptTypes(parsed.map((p: any) => ({ id: p.id, type: p.type })));
-        } catch {
-          setPromptTypes([]);
-        }
-      }
-    };
-    loadPrompts();
-  }, []);
-
-  return promptTypes;
+  const { prompts } = usePrompts();
+  return prompts.map(p => ({ id: p.id, type: p.type }));
 };
 
-function ArticleEditor({ task, visible, onClose }: { task: TaskWithArticles; visible: boolean; onClose: () => void }) {
+function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArticles; visible: boolean; onClose: () => void; settings: Record<string, string> }) {
   const { articles, updateArticle, loading } = useArticles(task.id);
   const [editingArticle, setEditingArticle] = useState<Article | null>(null);
   const [content, setContent] = useState('');
@@ -139,22 +125,19 @@ function ArticleEditor({ task, visible, onClose }: { task: TaskWithArticles; vis
   };
 
   // 标记为准备发布（ready 状态）
-  const handleMarkReady = async (article: Article) => {
+  const handleMarkReady = async (article: Article, settings: Record<string, string>) => {
     try {
       await updateArticle(article.id, { status: 'ready' });
       message.success('已标记为准备发布');
-      
+
       // 获取通知模式设置
-      const notifyMode = localStorage.getItem('feishu_notify_mode') || 'immediate';
-      const feishuWebhook = localStorage.getItem('feishu_webhook');
-      
+      const notifyMode = settings['feishu_notify_mode'] || 'immediate';
+      const feishuWebhook = settings['feishu_webhook'];
+
       if (feishuWebhook) {
         if (notifyMode === 'immediate') {
           // 即时通知：立即发送
           await sendFeishuNotification(feishuWebhook, task, article);
-        } else {
-          // 批量通知：检查今天是否全部完成（需要传入所有任务来检查）
-          // 这里无法获取所有任务，需要在父组件中处理
         }
       }
     } catch {
@@ -184,20 +167,20 @@ function ArticleEditor({ task, visible, onClose }: { task: TaskWithArticles; vis
     }
   };
 
-  // 从 localStorage 获取网站名称
-  const getWebsiteLabels = (websites: string[]) => {
-    const saved = localStorage.getItem('managedWebsites');
-    const managedWebsites = saved ? JSON.parse(saved) : [];
-    return websites.map(w => {
-      const site = managedWebsites.find((s: any) => s.id === w);
+  // 使用 hooks 获取数据
+  const { websites } = useWebsites();
+  const { prompts } = usePrompts();
+
+  // 获取网站名称
+  const getWebsiteLabels = (websiteIds: string[]) => {
+    return websiteIds.map(w => {
+      const site = websites.find((s: any) => s.id === w);
       return site ? `${site.name} (${site.platform})` : w;
     });
   };
 
-  // 从 localStorage 获取提示词类型名称
+  // 获取提示词类型名称
   const getPromptTypeLabel = (promptTypeId: string) => {
-    const saved = localStorage.getItem('articlePrompts');
-    const prompts = saved ? JSON.parse(saved) : [];
     const prompt = prompts.find((p: any) => p.id === promptTypeId);
     return prompt ? prompt.type : promptTypeId;
   };
@@ -275,7 +258,7 @@ function ArticleEditor({ task, visible, onClose }: { task: TaskWithArticles; vis
                   key="ready"
                   type="primary"
                   icon={<CheckCircleOutlined />}
-                  onClick={() => handleMarkReady(article)}
+                  onClick={() => handleMarkReady(article, settings)}
                   size="small"
                   disabled={!article.content}
                   title={!article.content ? '请先编辑添加内容' : ''}
@@ -341,6 +324,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   const { tasks, loading, error, deleteTask, refreshTasks } = useTasks();
   const [selectedTask, setSelectedTask] = useState<TaskWithArticles | null>(null);
   const promptTypes = usePromptTypes();
+  const { settings, setSetting } = useSettings();
 
   // 筛选状态
   const [filterCity, setFilterCity] = useState<string | undefined>(undefined);
@@ -357,7 +341,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   useEffect(() => {
     const checkBatch = async () => {
       if (!loading && tasks.length > 0) {
-        await checkAndSendBatchNotification(tasks, '');
+        await checkAndSendBatchNotification(tasks, '', settings);
       }
     };
     checkBatch();
@@ -473,9 +457,9 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
           </Text>
         </div>
         <Radio.Group
-          value={localStorage.getItem('feishu_notify_mode') || 'immediate'}
-          onChange={(e) => {
-            localStorage.setItem('feishu_notify_mode', e.target.value);
+          value={settings['feishu_notify_mode'] || 'immediate'}
+          onChange={async (e) => {
+            await setSetting('feishu_notify_mode', e.target.value);
             message.success(`已切换为${e.target.value === 'immediate' ? '即时通知' : '批量通知'}`);
           }}
           optionType="button"
@@ -675,6 +659,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
           task={selectedTask}
           visible={!!selectedTask}
           onClose={() => setSelectedTask(null)}
+          settings={settings}
         />
       )}
 

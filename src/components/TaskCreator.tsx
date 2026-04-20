@@ -4,6 +4,7 @@ import { PlusOutlined, DeleteOutlined, CopyOutlined, CheckCircleOutlined, Settin
 import dayjs from 'dayjs';
 import { useTasks } from '../hooks/useSupabase';
 import { useWebsites } from '../hooks/useWebsites';
+import { usePrompts } from '../hooks/usePrompts';
 import { supabase } from '../supabase';
 import { CITIES, WEBSITES as DEFAULT_WEBSITES, type Article } from '../types';
 
@@ -11,45 +12,17 @@ const { TextArea } = Input;
 const { Text, Title } = Typography;
 const { Panel } = Collapse;
 
-// 提示词类型接口
-interface PromptType {
-  id: string;
-  type: string;
-  content: string;
-  exampleUrl: string;
-  createdAt: string;
-}
-
-// 从 PromptManager 读取提示词类型
+// 从 Supabase 读取提示词类型
 const usePromptTypes = () => {
-  const [promptTypes, setPromptTypes] = useState<PromptType[]>([]);
-
-  useEffect(() => {
-    const loadPrompts = () => {
-      const saved = localStorage.getItem('articlePrompts');
-      if (saved) {
-        try {
-          setPromptTypes(JSON.parse(saved));
-        } catch {
-          setPromptTypes([]);
-        }
-      }
-    };
-
-    loadPrompts();
-
-    // 监听 storage 变化
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'articlePrompts') {
-        loadPrompts();
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
-
-  return promptTypes;
+  const { prompts } = usePrompts();
+  // 转换为组件需要的格式
+  return prompts.map(p => ({
+    id: p.id,
+    type: p.type,
+    content: p.content,
+    exampleUrl: p.example_url || '',
+    createdAt: p.created_at,
+  }));
 };
 
 // 自定义提示词类型选择组件
