@@ -472,27 +472,19 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
             管理您的内容生成任务
           </Text>
         </div>
-        <Space>
-          <Radio.Group
-            value={localStorage.getItem('feishu_notify_mode') || 'immediate'}
-            onChange={(e) => {
-              localStorage.setItem('feishu_notify_mode', e.target.value);
-              message.success(`已切换为${e.target.value === 'immediate' ? '即时通知' : '批量通知'}`);
-            }}
-            optionType="button"
-            buttonStyle="solid"
-            options={[
-              { label: '即时通知', value: 'immediate' },
-              { label: '批量通知', value: 'batch' },
-            ]}
-          />
-          <Button
-            icon={<SettingOutlined />}
-            onClick={() => onOpenSettings?.()}
-          >
-            通知设置
-          </Button>
-        </Space>
+        <Radio.Group
+          value={localStorage.getItem('feishu_notify_mode') || 'immediate'}
+          onChange={(e) => {
+            localStorage.setItem('feishu_notify_mode', e.target.value);
+            message.success(`已切换为${e.target.value === 'immediate' ? '即时通知' : '批量通知'}`);
+          }}
+          optionType="button"
+          buttonStyle="solid"
+          options={[
+            { label: '即时通知', value: 'immediate' },
+            { label: '批量通知', value: 'batch' },
+          ]}
+        />
       </div>
 
       {/* 统计区域 */}

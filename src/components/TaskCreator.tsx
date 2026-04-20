@@ -1031,6 +1031,7 @@ function CreatedTasksList() {
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [detailModal, setDetailModal] = useState<{ visible: boolean; articles: Article[]; title: string }>({ visible: false, articles: [], title: '' });
+  const [editModal, setEditModal] = useState<{ visible: boolean; record: any; tasks: any[] }>({ visible: false, record: null, tasks: [] });
   const promptTypes = usePromptTypes();
 
   // 如果有错误，显示错误信息
@@ -1137,6 +1138,35 @@ function CreatedTasksList() {
     message.info('编辑功能待实现');
   };
 
+  // 处理任务编辑
+  const handleEditTask = (record: any, tasksToEdit: any[]) => {
+    setEditModal({ visible: true, record, tasks: tasksToEdit });
+  };
+
+  // 保存任务编辑
+  const handleSaveEdit = async (values: any) => {
+    try {
+      for (const task of editModal.tasks) {
+        const { error } = await supabase
+          .from('tasks')
+          .update({
+            websites: values.websites,
+            prompt_type: values.prompt_type,
+            writing_suggestions: values.writing_suggestions,
+          })
+          .eq('id', task.id);
+        
+        if (error) throw error;
+      }
+      
+      message.success('修改成功');
+      setEditModal({ visible: false, record: null, tasks: [] });
+      refreshTasks();
+    } catch (err) {
+      message.error('修改失败');
+    }
+  };
+
   // 处理批量删除
   const handleBatchDelete = async () => {
     if (selectedRowKeys.length === 0) {
@@ -1218,27 +1248,39 @@ function CreatedTasksList() {
     {
       title: '操作',
       key: 'action',
-      width: 80,
+      width: 120,
       render: (_: any, record: any) => {
-        const tasksToDelete = filteredTasks.filter(
+        const tasksToEdit = filteredTasks.filter(
           t => t.city === record.city && t.prompt_type === record.promptType
         );
+        const canEdit = record.draft > 0; // 有未发布文章时可以编辑
+        
         return (
-          <Popconfirm
-            title="确定删除?"
-            description={`删除 ${record.city} 的 ${record.total} 篇文章`}
-            onConfirm={async () => {
-              for (const task of tasksToDelete) {
-                await deleteTask(task.id);
-              }
-              message.success('删除成功');
-              refreshTasks();
-            }}
-            okText="确定"
-            cancelText="取消"
-          >
-            <Button type="link" danger size="small">删除</Button>
-          </Popconfirm>
+          <Space size="small">
+            <Button 
+              type="link" 
+              size="small"
+              disabled={!canEdit}
+              onClick={() => handleEditTask(record, tasksToEdit)}
+            >
+              编辑
+            </Button>
+            <Popconfirm
+              title="确定删除?"
+              description={`删除 ${record.city} 的 ${record.total} 篇文章`}
+              onConfirm={async () => {
+                for (const task of tasksToEdit) {
+                  await deleteTask(task.id);
+                }
+                message.success('删除成功');
+                refreshTasks();
+              }}
+              okText="确定"
+              cancelText="取消"
+            >
+              <Button type="link" danger size="small">删除</Button>
+            </Popconfirm>
+          </Space>
         );
       },
     },
@@ -1311,6 +1353,71 @@ function CreatedTasksList() {
         onDelete={handleDeleteArticle}
         onEdit={handleEditArticle}
       />
+
+      {/* 编辑任务弹窗 */}
+      <Modal
+        title={`编辑任务 - ${editModal.record?.city || ''}`}
+        open={editModal.visible}
+        onCancel={() => setEditModal({ visible: false, record: null, tasks: [] })}
+        footer={null}
+        width={600}
+      >
+        {editModal.record && (
+          <Form
+            layout="vertical"
+            onFinish={handleSaveEdit}
+            initialValues={{
+              websites: editModal.tasks[0]?.websites || [],
+              prompt_type: editModal.tasks[0]?.prompt_type || '',
+              writing_suggestions: editModal.tasks[0]?.writing_suggestions || '',
+            }}
+          >
+            <Form.Item
+              name="websites"
+              label="发布网站"
+              rules={[{ required: true, message: '请选择发布网站' }]}
+            >
+              <Select
+                mode="multiple"
+                placeholder="选择发布网站"
+                options={DEFAULT_WEBSITES.map(w => ({ label: w.name, value: w.id }))}
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="prompt_type"
+              label="提示词类型"
+              rules={[{ required: true, message: '请选择提示词类型' }]}
+            >
+              <Select
+                placeholder="选择提示词类型"
+                options={promptTypes.map(p => ({ label: p.type, value: p.id }))}
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="writing_suggestions"
+              label="写作建议/备注"
+            >
+              <Input.TextArea
+                placeholder="输入写作建议或备注"
+                rows={3}
+              />
+            </Form.Item>
+
+            <Form.Item>
+              <Space>
+                <Button type="primary" htmlType="submit">
+                  保存
+                </Button>
+                <Button onClick={() => setEditModal({ visible: false, record: null, tasks: [] })}>
+                  取消
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        )}
+      </Modal>
     </Space>
   );
 }
@@ -1371,6 +1478,11 @@ function CreateTaskPage() {
 // 主组件
 export default function TaskCreator({ defaultView = 'create' }: { defaultView?: 'create' | 'created' }) {
   const [activeMainTab, setActiveMainTab] = useState(defaultView);
+
+  // 当 defaultView 变化时，同步更新 activeMainTab
+  useEffect(() => {
+    setActiveMainTab(defaultView);
+  }, [defaultView]);
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
