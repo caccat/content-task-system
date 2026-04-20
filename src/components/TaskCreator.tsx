@@ -1134,8 +1134,8 @@ function CreatedTasksList() {
 
   // 处理文章编辑
   const handleEditArticle = (article: Article) => {
-    // TODO: 实现编辑功能
-    message.info('编辑功能待实现');
+    // 编辑功能已禁用
+    console.log('Edit disabled for article:', article.id);
   };
 
   // 处理任务编辑
@@ -1248,23 +1248,14 @@ function CreatedTasksList() {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 80,
       render: (_: any, record: any) => {
         const tasksToEdit = filteredTasks.filter(
           t => t.city === record.city && t.prompt_type === record.promptType
         );
-        const canEdit = record.draft > 0; // 有未发布文章时可以编辑
         
         return (
           <Space size="small">
-            <Button 
-              type="link" 
-              size="small"
-              disabled={!canEdit}
-              onClick={() => handleEditTask(record, tasksToEdit)}
-            >
-              编辑
-            </Button>
             <Popconfirm
               title="确定删除?"
               description={`删除 ${record.city} 的 ${record.total} 篇文章`}
@@ -1477,33 +1468,14 @@ function CreateTaskPage() {
 
 // 主组件
 export default function TaskCreator({ defaultView = 'create' }: { defaultView?: 'create' | 'created' }) {
-  const [activeMainTab, setActiveMainTab] = useState(defaultView);
-
-  // 当 defaultView 变化时，同步更新 activeMainTab
-  useEffect(() => {
-    setActiveMainTab(defaultView);
-  }, [defaultView]);
-
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
       <Card title="创建内容生产和发布任务" bordered={false}>
-        <Tabs
-          activeKey={activeMainTab}
-          onChange={(key) => setActiveMainTab(key as 'create' | 'created')}
-          items={[
-            {
-              key: 'create',
-              label: '开始创建',
-              children: <CreateTaskPage />,
-            },
-            {
-              key: 'created',
-              label: '已创建',
-              children: <CreatedTasksList />,
-            },
-          ]}
-          size="large"
-        />
+        {defaultView === 'create' ? (
+          <CreateTaskPage />
+        ) : (
+          <CreatedTasksList />
+        )}
       </Card>
     </div>
   );
