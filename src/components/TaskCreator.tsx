@@ -1380,7 +1380,7 @@ function CreatedTasksList() {
               <Select
                 mode="multiple"
                 placeholder="选择发布网站"
-                options={DEFAULT_WEBSITES.map(w => ({ label: w.name, value: w.id }))}
+                options={DEFAULT_WEBSITES}
               />
             </Form.Item>
 
