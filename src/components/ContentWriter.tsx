@@ -168,11 +168,14 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   };
 
   // 使用 hooks 获取数据
-  const { websites } = useWebsites();
-  const { prompts } = usePrompts();
+  const { websites, loading: websitesLoading } = useWebsites();
+  const { prompts, loading: promptsLoading } = usePrompts();
 
   // 获取网站名称
   const getWebsiteLabels = (websiteIds: string[]) => {
+    if (websitesLoading || websites.length === 0) {
+      return ['加载中...'];
+    }
     return websiteIds.map(w => {
       const site = websites.find((s: any) => s.id === w);
       return site ? `${site.name} (${site.platform})` : w;
@@ -181,6 +184,9 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
 
   // 获取提示词类型名称
   const getPromptTypeLabel = (promptTypeId: string) => {
+    if (promptsLoading || prompts.length === 0) {
+      return '加载中...';
+    }
     const prompt = prompts.find((p: any) => p.id === promptTypeId);
     return prompt ? prompt.type : promptTypeId;
   };
