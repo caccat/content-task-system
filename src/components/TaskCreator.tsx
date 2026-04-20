@@ -1134,8 +1134,8 @@ function CreatedTasksList() {
 
   // 处理文章编辑
   const handleEditArticle = (article: Article) => {
-    // 编辑功能已禁用
-    console.log('Edit disabled for article:', article.id);
+    // TODO: 实现编辑功能
+    message.info('编辑功能待实现');
   };
 
   // 处理任务编辑
