@@ -1,5 +1,3 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-
 // DeepSeek API 配置
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = 'deepseek-chat';
@@ -119,6 +117,24 @@ interface GenerateRequest {
 
 interface BatchGenerateRequest {
   tasks: GenerateRequest[];
+  apiKey?: string;
+}
+
+interface GenerateResult {
+  success: boolean;
+  index: number;
+  content?: string;
+  error?: string;
+}
+
+interface BatchGenerateResult {
+  success: boolean;
+  total: number;
+  successCount: number;
+  failCount: number;
+  results: GenerateResult[];
+  error?: string;
+  message?: string;
 }
 
 // 生成单篇文章
@@ -194,7 +210,17 @@ async function generateArticle(
   return data.choices[0].message.content.trim();
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(
+  req: {
+    method: string;
+    body: BatchGenerateRequest;
+  },
+  res: {
+    status: (code: number) => { json: (data: any) => any };
+    setHeader: (name: string, value: string) => void;
+    end: () => void;
+  }
+) {
   // 设置 CORS 头
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -219,13 +245,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 获取 API Key
-    const deepseekApiKey = apiKey || process.env.DEEPSEEK_API_KEY;
+    const deepseekApiKey = apiKey || (req.body as any).apiKey || process.env.DEEPSEEK_API_KEY;
     if (!deepseekApiKey) {
       return res.status(400).json({ error: '未配置 DeepSeek API Key' });
     }
 
     // 批量生成文章
-    const results: Array<{ success: boolean; index: number; content?: string; error?: string }> = [];
+    const results: GenerateResult[] = [];
     
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
@@ -257,19 +283,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const successCount = results.filter(r => r.success).length;
     const failCount = results.filter(r => !r.success).length;
 
-    return res.status(200).json({
+    const response: BatchGenerateResult = {
       success: failCount === 0,
       total: tasks.length,
       successCount,
       failCount,
       results,
-    });
+    };
+
+    return res.status(200).json(response);
 
   } catch (error) {
     console.error('批量生成文章失败:', error);
-    return res.status(500).json({
+    
+    const response: BatchGenerateResult = {
+      success: false,
+      total: 0,
+      successCount: 0,
+      failCount: 0,
+      results: [],
       error: '服务器错误',
       message: error instanceof Error ? error.message : '未知错误',
-    });
+    };
+
+    return res.status(500).json(response);
   }
 }
