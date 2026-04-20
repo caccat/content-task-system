@@ -305,17 +305,17 @@ function App() {
       case 'writer':
         switch (writerSubPage) {
           case 'tasks':
-            return <ContentWriter />;
+            return <ContentWriter onOpenSettings={() => setCurrentRole('settings')} />;
           case 'draft':
-            return <ContentWriter defaultStatus="draft" />;
+            return <ContentWriter defaultStatus="draft" onOpenSettings={() => setCurrentRole('settings')} />;
           case 'ready':
-            return <ContentWriter defaultStatus="ready" />;
+            return <ContentWriter defaultStatus="ready" onOpenSettings={() => setCurrentRole('settings')} />;
           case 'completed':
-            return <ContentWriter defaultStatus="completed" />;
+            return <ContentWriter defaultStatus="completed" onOpenSettings={() => setCurrentRole('settings')} />;
           case 'prompts':
             return <PromptManager />;
           default:
-            return <ContentWriter />;
+            return <ContentWriter onOpenSettings={() => setCurrentRole('settings')} />;
         }
       case 'publisher':
         switch (publisherSubPage) {

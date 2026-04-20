@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Card, List, Badge, Tag, Button, Modal, Input, message, Typography, Space, Progress, Popconfirm, Select, Row, Col, DatePicker, Form, Radio, Divider } from 'antd';
-import { EditOutlined, FileTextOutlined, DeleteOutlined, ExclamationCircleOutlined, EyeOutlined, CheckCircleOutlined, UndoOutlined, FilterOutlined, CalendarOutlined, SettingOutlined, BellOutlined, NotificationOutlined, SaveOutlined } from '@ant-design/icons';
+import { Card, List, Badge, Tag, Button, Modal, Input, message, Typography, Space, Progress, Popconfirm, Select, Row, Col, DatePicker, Radio } from 'antd';
+import { EditOutlined, FileTextOutlined, DeleteOutlined, ExclamationCircleOutlined, EyeOutlined, CheckCircleOutlined, UndoOutlined, FilterOutlined, CalendarOutlined, SettingOutlined } from '@ant-design/icons';
 import { useTasks, useArticles } from '../hooks/useSupabase';
 import type { TaskWithArticles, Article } from '../types';
 import { CITIES } from '../types';
@@ -56,7 +56,7 @@ const sendBatchFeishuNotification = async (webhook: string, tasks: TaskWithArtic
 };
 
 // 检查是否需要发送批量通知
-const checkAndSendBatchNotification = async (tasks: TaskWithArticles[]) => {
+const checkAndSendBatchNotification = async (allTasks: TaskWithArticles[], currentTaskId: string) => {
   const notifyMode = localStorage.getItem('feishu_notify_mode') || 'immediate';
   if (notifyMode !== 'batch') return;
   
@@ -68,18 +68,21 @@ const checkAndSendBatchNotification = async (tasks: TaskWithArticles[]) => {
   const lastBatchNotify = localStorage.getItem('feishu_batch_notify_date');
   if (lastBatchNotify === today) return;
   
-  // 检查所有任务是否都已完成（所有文章都是 ready 或 published）
-  const todayTasks = tasks.filter(t => dayjs(t.deadline).format('YYYY-MM-DD') === today);
+  // 获取今天的所有任务
+  const todayTasks = allTasks.filter(t => dayjs(t.deadline).format('YYYY-MM-DD') === today);
   if (todayTasks.length === 0) return;
   
+  // 检查每个任务的文章是否都已完成（文章数量等于任务要求的数量，且所有文章都是 ready 或 published）
   const allCompleted = todayTasks.every(task => {
     const articles = task.articles || [];
-    return articles.length > 0 && articles.every(a => a.status === 'ready' || a.status === 'published');
+    const readyOrPublishedCount = articles.filter(a => a.status === 'ready' || a.status === 'published').length;
+    return readyOrPublishedCount === task.quantity;
   });
   
   if (allCompleted) {
     await sendBatchFeishuNotification(feishuWebhook, todayTasks);
     localStorage.setItem('feishu_batch_notify_date', today);
+    message.success('批量通知已发送');
   }
 };
 
@@ -150,8 +153,8 @@ function ArticleEditor({ task, visible, onClose }: { task: TaskWithArticles; vis
           // 即时通知：立即发送
           await sendFeishuNotification(feishuWebhook, task, article);
         } else {
-          // 批量通知：检查今天是否全部完成
-          await checkAndSendBatchNotification([task]);
+          // 批量通知：检查今天是否全部完成（需要传入所有任务来检查）
+          // 这里无法获取所有任务，需要在父组件中处理
         }
       }
     } catch {
@@ -331,161 +334,12 @@ function ArticleEditor({ task, visible, onClose }: { task: TaskWithArticles; vis
 
 interface ContentWriterProps {
   defaultStatus?: string;
+  onOpenSettings?: () => void;
 }
 
-// 飞书通知设置组件
-function FeishuSettingsModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const [form] = Form.useForm();
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (visible) {
-      const savedWebhook = localStorage.getItem('feishu_webhook') || '';
-      const savedNotifyMode = localStorage.getItem('feishu_notify_mode') || 'immediate';
-      form.setFieldsValue({
-        feishu_webhook: savedWebhook,
-        notify_mode: savedNotifyMode,
-      });
-    }
-  }, [visible, form]);
-
-  const handleSave = async (values: any) => {
-    setSaving(true);
-    try {
-      if (values.feishu_webhook) {
-        localStorage.setItem('feishu_webhook', values.feishu_webhook);
-      } else {
-        localStorage.removeItem('feishu_webhook');
-      }
-      localStorage.setItem('feishu_notify_mode', values.notify_mode || 'immediate');
-      message.success('设置已保存');
-      onClose();
-    } catch (error) {
-      message.error('保存失败');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const testWebhook = async () => {
-    const webhook = form.getFieldValue('feishu_webhook');
-    if (!webhook) {
-      message.warning('请先填写 Webhook 地址');
-      return;
-    }
-
-    try {
-      const response = await fetch(webhook, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          msg_type: 'text',
-          content: {
-            text: '🔔 测试消息\n\n飞书通知配置成功！当有内容准备发布时，您将收到通知。'
-          }
-        })
-      });
-
-      if (response.ok) {
-        message.success('测试消息已发送，请检查飞书群');
-      } else {
-        message.error('发送失败，请检查 Webhook 地址是否正确');
-      }
-    } catch (error) {
-      message.error('发送失败，请检查网络连接');
-    }
-  };
-
-  return (
-    <Modal
-      title={
-        <Space>
-          <BellOutlined />
-          飞书通知设置
-        </Space>
-      }
-      open={visible}
-      onCancel={onClose}
-      footer={null}
-      width={560}
-    >
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={handleSave}
-      >
-        <Form.Item
-          name="feishu_webhook"
-          label="飞书群 Webhook 地址"
-          extra="在飞书群设置中添加自定义机器人，复制 Webhook 地址粘贴到这里"
-        >
-          <Input.TextArea
-            placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
-            rows={2}
-          />
-        </Form.Item>
-
-        <Form.Item
-          name="notify_mode"
-          label={
-            <Space>
-              <NotificationOutlined />
-              通知模式
-            </Space>
-          }
-        >
-          <Radio.Group>
-            <Radio value="immediate">
-              <Space direction="vertical" size={0}>
-                <Text strong>即时通知</Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>每生产完一篇文章后立即通知</Text>
-              </Space>
-            </Radio>
-            <Radio value="batch">
-              <Space direction="vertical" size={0}>
-                <Text strong>批量通知</Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>当天文章全部生产完后再通知</Text>
-              </Space>
-            </Radio>
-          </Radio.Group>
-        </Form.Item>
-
-        <Divider />
-
-        <Form.Item>
-          <Space>
-            <Button
-              type="primary"
-              htmlType="submit"
-              icon={<SaveOutlined />}
-              loading={saving}
-            >
-              保存设置
-            </Button>
-            <Button onClick={testWebhook}>
-              发送测试消息
-            </Button>
-          </Space>
-        </Form.Item>
-      </Form>
-
-      <div style={{ background: '#f6ffed', padding: '16px', borderRadius: '8px', border: '1px solid #b7eb8f', marginTop: 16 }}>
-        <Text strong style={{ color: '#52c41a' }}>配置说明：</Text>
-        <ol style={{ margin: '8px 0 0 0', paddingLeft: '20px', color: '#666' }}>
-          <li>在飞书群中点击右上角「...」→「群机器人」</li>
-          <li>点击「添加机器人」，选择「自定义机器人」</li>
-          <li>复制生成的 Webhook 地址，粘贴到上方输入框</li>
-          <li>点击「保存设置」，然后可以「发送测试消息」验证</li>
-        </ol>
-      </div>
-    </Modal>
-  );
-}
-
-export default function ContentWriter({ defaultStatus }: ContentWriterProps) {
+export default function ContentWriter({ defaultStatus, onOpenSettings }: ContentWriterProps) {
   const { tasks, loading, error, deleteTask, refreshTasks } = useTasks();
   const [selectedTask, setSelectedTask] = useState<TaskWithArticles | null>(null);
-  const [settingsVisible, setSettingsVisible] = useState(false);
   const promptTypes = usePromptTypes();
 
   // 筛选状态
@@ -498,6 +352,16 @@ export default function ContentWriter({ defaultStatus }: ContentWriterProps) {
   useEffect(() => {
     setFilterStatus(defaultStatus);
   }, [defaultStatus]);
+
+  // 检查批量通知 - 当任务数据变化时自动检查
+  useEffect(() => {
+    const checkBatch = async () => {
+      if (!loading && tasks.length > 0) {
+        await checkAndSendBatchNotification(tasks, '');
+      }
+    };
+    checkBatch();
+  }, [tasks, loading]);
 
   // 内容生产者视角：根据文章状态判断任务进度
   const getTaskProgress = (task: TaskWithArticles) => {
@@ -624,7 +488,7 @@ export default function ContentWriter({ defaultStatus }: ContentWriterProps) {
           />
           <Button
             icon={<SettingOutlined />}
-            onClick={() => setSettingsVisible(true)}
+            onClick={() => onOpenSettings?.()}
           >
             通知设置
           </Button>
@@ -822,10 +686,6 @@ export default function ContentWriter({ defaultStatus }: ContentWriterProps) {
         />
       )}
 
-      <FeishuSettingsModal
-        visible={settingsVisible}
-        onClose={() => setSettingsVisible(false)}
-      />
     </div>
   );
 }
