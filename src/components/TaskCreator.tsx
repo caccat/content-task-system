@@ -268,7 +268,7 @@ interface BatchTaskRow {
 }
 
 // 批量任务创建 - 新设计
-function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void; loading: boolean }) {
+function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit: (tasks: any[]) => void; loading: boolean; hideCreatedTab?: boolean }) {
   const [activeTab, setActiveTab] = useState<'create' | 'created'>('create');
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
@@ -678,66 +678,71 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
     );
   }
 
+  const tabItems = [
+    {
+      key: 'create',
+      label: '批量创建',
+      children: (
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Table
+            rowSelection={rowSelection}
+            dataSource={rows}
+            columns={columns}
+            pagination={false}
+            size="small"
+            bordered
+            rowKey="id"
+            scroll={{ x: 'max-content' }}
+          />
+
+          <Space>
+            <Button type="primary" icon={<PlusOutlined />} onClick={addRow}>
+              添加行
+            </Button>
+            <Button danger icon={<DeleteOutlined />} onClick={removeSelectedRows} disabled={selectedRowKeys.length === 0}>
+              删除选中
+            </Button>
+            <Button icon={<SettingOutlined />} onClick={openDetailConfig} disabled={selectedRowKeys.length !== 1}>
+              详细配置
+            </Button>
+            <Button type="primary" icon={<EyeOutlined />} onClick={handlePreview}>
+              预览并全部创建
+            </Button>
+          </Space>
+
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            选中单元格后：⌘+C 复制  ⌘+V 粘贴  Delete 清空
+          </Text>
+
+          <Card size="small" style={{ background: '#f6ffed' }}>
+            <Row gutter={16}>
+              <Col>统计：共 {stats.totalCities} 个城市，{stats.totalArticles} 篇文章</Col>
+              {promptTypes.map(type => (
+                <Col key={type.id}>
+                  {type.type}：{stats.typeStats[type.id] || 0} 篇
+                </Col>
+              ))}
+            </Row>
+          </Card>
+        </Space>
+      ),
+    },
+  ];
+
+  if (!hideCreatedTab) {
+    tabItems.push({
+      key: 'created',
+      label: '已创建任务',
+      children: <CreatedTasksList />,
+    });
+  }
+
   return (
     <>
       <Tabs
         activeKey={activeTab}
         onChange={(key) => setActiveTab(key as 'create' | 'created')}
-        items={[
-          {
-            key: 'create',
-            label: '批量创建',
-            children: (
-              <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                <Table
-                  rowSelection={rowSelection}
-                  dataSource={rows}
-                  columns={columns}
-                  pagination={false}
-                  size="small"
-                  bordered
-                  rowKey="id"
-                  scroll={{ x: 'max-content' }}
-                />
-
-                <Space>
-                  <Button type="primary" icon={<PlusOutlined />} onClick={addRow}>
-                    添加行
-                  </Button>
-                  <Button danger icon={<DeleteOutlined />} onClick={removeSelectedRows} disabled={selectedRowKeys.length === 0}>
-                    删除选中
-                  </Button>
-                  <Button icon={<SettingOutlined />} onClick={openDetailConfig} disabled={selectedRowKeys.length !== 1}>
-                    详细配置
-                  </Button>
-                  <Button type="primary" icon={<EyeOutlined />} onClick={handlePreview}>
-                    预览并全部创建
-                  </Button>
-                </Space>
-
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  选中单元格后：⌘+C 复制  ⌘+V 粘贴  Delete 清空
-                </Text>
-
-                <Card size="small" style={{ background: '#f6ffed' }}>
-                  <Row gutter={16}>
-                    <Col>统计：共 {stats.totalCities} 个城市，{stats.totalArticles} 篇文章</Col>
-                    {promptTypes.map(type => (
-                      <Col key={type.id}>
-                        {type.type}：{stats.typeStats[type.id] || 0} 篇
-                      </Col>
-                    ))}
-                  </Row>
-                </Card>
-              </Space>
-            ),
-          },
-          {
-            key: 'created',
-            label: '已创建任务',
-            children: <CreatedTasksList />,
-          },
-        ]}
+        items={tabItems}
       />
 
       {/* 详细配置弹窗 */}
@@ -916,6 +921,84 @@ function ProgressBar({ percent, color, icon, label, onClick }: { percent: number
         <Text style={{ fontSize: 12, width: 40 }}>{percent}%</Text>
       </Space>
     </div>
+  );
+}
+
+// 文章编辑弹窗
+function ArticleEditModal({
+  visible,
+  article,
+  onCancel,
+  onSave,
+  managedWebsites,
+}: {
+  visible: boolean;
+  article: Article | null;
+  onCancel: () => void;
+  onSave: (values: { website: string; notes: string }) => void;
+  managedWebsites: { id: string; name: string; platform: string }[];
+}) {
+  const [form] = Form.useForm();
+
+  // 当 article 变化时，重置表单值
+  useEffect(() => {
+    if (article && visible) {
+      form.setFieldsValue({
+        website: article.website || undefined,
+        notes: article.notes || '',
+      });
+    }
+  }, [article, visible, form]);
+
+  return (
+    <Modal
+      title="编辑文章"
+      open={visible}
+      onCancel={onCancel}
+      footer={null}
+      width={500}
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={onSave}
+      >
+        <Form.Item
+          name="website"
+          label="发布网站"
+        >
+          <Select
+            placeholder="选择发布网站"
+            allowClear
+            options={managedWebsites.map(w => ({
+              label: `${w.name} (${w.platform})`,
+              value: w.id,
+            }))}
+          />
+        </Form.Item>
+
+        <Form.Item
+          name="notes"
+          label="备注"
+        >
+          <Input.TextArea
+            placeholder="输入备注信息"
+            rows={3}
+          />
+        </Form.Item>
+
+        <Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit">
+              保存
+            </Button>
+            <Button onClick={onCancel}>
+              取消
+            </Button>
+          </Space>
+        </Form.Item>
+      </Form>
+    </Modal>
   );
 }
 
@@ -1381,59 +1464,13 @@ function CreatedTasksList() {
       </Modal>
 
       {/* 编辑文章弹窗 */}
-      <Modal
-        title="编辑文章"
-        open={articleEditModal.visible}
+      <ArticleEditModal
+        visible={articleEditModal.visible}
+        article={articleEditModal.article}
         onCancel={() => setArticleEditModal({ visible: false, article: null })}
-        footer={null}
-        width={500}
-      >
-        {articleEditModal.article && (
-          <Form
-            layout="vertical"
-            onFinish={handleSaveArticleEdit}
-            initialValues={{
-              website: articleEditModal.article.website || '',
-              notes: articleEditModal.article.notes || '',
-            }}
-          >
-            <Form.Item
-              name="website"
-              label="发布网站"
-            >
-              <Select
-                placeholder="选择发布网站"
-                allowClear
-                options={managedWebsites.map(w => ({
-                  label: `${w.name} (${w.platform})`,
-                  value: w.id,
-                }))}
-              />
-            </Form.Item>
-
-            <Form.Item
-              name="notes"
-              label="备注"
-            >
-              <Input.TextArea
-                placeholder="输入备注信息"
-                rows={3}
-              />
-            </Form.Item>
-
-            <Form.Item>
-              <Space>
-                <Button type="primary" htmlType="submit">
-                  保存
-                </Button>
-                <Button onClick={() => setArticleEditModal({ visible: false, article: null })}>
-                  取消
-                </Button>
-              </Space>
-            </Form.Item>
-          </Form>
-        )}
-      </Modal>
+        onSave={handleSaveArticleEdit}
+        managedWebsites={managedWebsites}
+      />
     </Space>
   );
 }
