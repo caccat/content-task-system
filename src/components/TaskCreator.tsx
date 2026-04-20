@@ -816,7 +816,7 @@ function DetailConfigPanel({
   onUpdate,
 }: {
   row: BatchTaskRow;
-  promptTypes: PromptType[];
+  promptTypes: { id: string; type: string; content: string; exampleUrl: string; createdAt: string }[];
   managedWebsites: {id: string; name: string; platform: string}[];
   defaultActiveType?: string;
   onUpdate: (configs: { promptTypeId: string; websiteConfigs: WebsiteConfig[] }) => void;
