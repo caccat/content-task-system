@@ -3,6 +3,7 @@ import { Form, Input, Select, DatePicker, InputNumber, Button, Card, message, Sp
 import { PlusOutlined, DeleteOutlined, CopyOutlined, CheckCircleOutlined, SettingOutlined, EyeOutlined, CalendarOutlined, FilterOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useTasks } from '../hooks/useSupabase';
+import { useWebsites } from '../hooks/useWebsites';
 import { supabase } from '../supabase';
 import { CITIES, WEBSITES as DEFAULT_WEBSITES, type Article } from '../types';
 
@@ -95,57 +96,30 @@ function PromptTypeSelect({
   );
 }
 
-// 自定义网站选择组件 - 从 WebsiteManager 读取已管理的网站
-function CustomWebsiteSelect({ 
-  value = [], 
-  onChange, 
-  placeholder = "请选择发布网站" 
-}: { 
-  value?: string[]; 
-  onChange?: (value: string[]) => void; 
+// 自定义网站选择组件 - 从 Supabase 读取已管理的网站
+function CustomWebsiteSelect({
+  value = [],
+  onChange,
+  placeholder = "请选择发布网站"
+}: {
+  value?: string[];
+  onChange?: (value: string[]) => void;
   placeholder?: string;
 }) {
-  const [managedWebsites, setManagedWebsites] = useState<{id: string; name: string; platform: string; price: number}[]>([]);
-  
-  // 从 WebsiteManager 的 localStorage 加载网站
-  useEffect(() => {
-    const loadWebsites = () => {
-      const saved = localStorage.getItem('managedWebsites');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          setManagedWebsites(parsed);
-        } catch {
-          console.error('Failed to parse managed websites');
-        }
-      }
-    };
-    
-    loadWebsites();
-    
-    // 监听 storage 变化，实现数据同步
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'managedWebsites') {
-        loadWebsites();
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
-  
+  const { websites, loading } = useWebsites();
+
   // 转换为 Select 需要的格式
-  const websiteOptions = managedWebsites.map(w => ({
+  const websiteOptions = websites.map(w => ({
     value: w.id,
     label: `${w.name} (${w.platform})`,
   }));
-  
+
   // 获取显示标签
   const getTagLabel = (id: string) => {
-    const site = managedWebsites.find(w => w.id === id);
+    const site = websites.find(w => w.id === id);
     return site ? `${site.name} (${site.platform})` : id;
   };
-  
+
   return (
     <Select
       mode="multiple"
@@ -153,6 +127,7 @@ function CustomWebsiteSelect({
       onChange={onChange}
       placeholder={placeholder}
       style={{ width: '100%' }}
+      loading={loading}
       tokenSeparators={[]}
       tagRender={(props) => {
         const { value: tagValue, closable, onClose } = props;
@@ -327,19 +302,7 @@ function BatchTaskForm({ onSubmit, loading }: { onSubmit: (tasks: any[]) => void
   const [detailRowId, setDetailRowId] = useState<string | null>(null);
   const [activePromptType, setActivePromptType] = useState<string>('');
   const promptTypes = usePromptTypes();
-  const [managedWebsites, setManagedWebsites] = useState<{id: string; name: string; platform: string}[]>([]);
-  
-  // 加载管理的网站
-  useEffect(() => {
-    const saved = localStorage.getItem('managedWebsites');
-    if (saved) {
-      try {
-        setManagedWebsites(JSON.parse(saved));
-      } catch {
-        setManagedWebsites([]);
-      }
-    }
-  }, []);
+  const { websites: managedWebsites } = useWebsites();
 
   // 创建空行
   const createEmptyRow = (): BatchTaskRow => {
@@ -1033,20 +996,8 @@ function CreatedTasksList() {
   const [detailModal, setDetailModal] = useState<{ visible: boolean; articles: Article[]; title: string }>({ visible: false, articles: [], title: '' });
   const [editModal, setEditModal] = useState<{ visible: boolean; record: any; tasks: any[] }>({ visible: false, record: null, tasks: [] });
   const [articleEditModal, setArticleEditModal] = useState<{ visible: boolean; article: Article | null }>({ visible: false, article: null });
-  const [managedWebsites, setManagedWebsites] = useState<{id: string; name: string; platform: string}[]>([]);
+  const { websites: managedWebsites } = useWebsites();
   const promptTypes = usePromptTypes();
-
-  // 加载管理的网站
-  useEffect(() => {
-    const saved = localStorage.getItem('managedWebsites');
-    if (saved) {
-      try {
-        setManagedWebsites(JSON.parse(saved));
-      } catch {
-        setManagedWebsites([]);
-      }
-    }
-  }, []);
 
   // 如果有错误，显示错误信息
   if (error) {

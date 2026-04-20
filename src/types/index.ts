@@ -18,6 +18,15 @@ export interface Article {
   notes?: string | null;
 }
 
+export interface Website {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  name: string;
+  platform: string;
+  price: number;
+}
+
 export interface Task {
   id: string;
   created_at: string;

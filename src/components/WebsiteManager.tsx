@@ -1,40 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, Table, Button, Input, InputNumber, Space, message, Popconfirm, Tag } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
-
-interface Website {
-  id: string;
-  name: string;
-  platform: string;
-  price: number;
-}
+import { useWebsites } from '../hooks/useWebsites';
+import type { Website } from '../types';
 
 export default function WebsiteManager() {
-  const [websites, setWebsites] = useState<Website[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { websites, loading, createWebsite, updateWebsite, deleteWebsite } = useWebsites();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingData, setEditingData] = useState<Partial<Website>>({});
   const [isAdding, setIsAdding] = useState(false);
   const [newWebsite, setNewWebsite] = useState<Partial<Website>>({ name: '', platform: '', price: 0 });
-
-  // 从 localStorage 加载数据
-  useEffect(() => {
-    const saved = localStorage.getItem('managedWebsites');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setWebsites(parsed);
-      } catch {
-        console.error('Failed to parse websites');
-      }
-    }
-  }, []);
-
-  // 保存到 localStorage
-  const saveWebsites = (data: Website[]) => {
-    localStorage.setItem('managedWebsites', JSON.stringify(data));
-    setWebsites(data);
-  };
+  const [saving, setSaving] = useState(false);
 
   // 开始编辑
   const startEdit = (record: Website) => {
@@ -49,7 +25,7 @@ export default function WebsiteManager() {
   };
 
   // 保存编辑
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editingData.name?.trim()) {
       message.error('请输入网站名称');
       return;
@@ -63,22 +39,31 @@ export default function WebsiteManager() {
       return;
     }
 
-    const updated = websites.map(w => 
-      w.id === editingId 
-        ? { ...w, ...editingData } as Website
-        : w
-    );
-    saveWebsites(updated);
-    setEditingId(null);
-    setEditingData({});
-    message.success('保存成功');
+    setSaving(true);
+    try {
+      await updateWebsite(editingId!, {
+        name: editingData.name.trim(),
+        platform: editingData.platform.trim(),
+        price: editingData.price,
+      });
+      setEditingId(null);
+      setEditingData({});
+      message.success('保存成功');
+    } catch {
+      message.error('保存失败');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // 删除
-  const handleDelete = (id: string) => {
-    const updated = websites.filter(w => w.id !== id);
-    saveWebsites(updated);
-    message.success('删除成功');
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteWebsite(id);
+      message.success('删除成功');
+    } catch {
+      message.error('删除失败');
+    }
   };
 
   // 开始添加
@@ -94,7 +79,7 @@ export default function WebsiteManager() {
   };
 
   // 确认添加
-  const confirmAdd = () => {
+  const confirmAdd = async () => {
     if (!newWebsite.name?.trim()) {
       message.error('请输入网站名称');
       return;
@@ -108,17 +93,21 @@ export default function WebsiteManager() {
       return;
     }
 
-    const website: Website = {
-      id: 'website_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-      name: newWebsite.name.trim(),
-      platform: newWebsite.platform.trim(),
-      price: newWebsite.price,
-    };
-
-    saveWebsites([...websites, website]);
-    setIsAdding(false);
-    setNewWebsite({ name: '', platform: '', price: 0 });
-    message.success('添加成功');
+    setSaving(true);
+    try {
+      await createWebsite({
+        name: newWebsite.name.trim(),
+        platform: newWebsite.platform.trim(),
+        price: newWebsite.price,
+      });
+      setIsAdding(false);
+      setNewWebsite({ name: '', platform: '', price: 0 });
+      message.success('添加成功');
+    } catch {
+      message.error('添加失败');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const columns = [
@@ -192,6 +181,7 @@ export default function WebsiteManager() {
                 size="small"
                 icon={<SaveOutlined />}
                 onClick={saveEdit}
+                loading={saving}
               >
                 保存
               </Button>
@@ -281,7 +271,7 @@ export default function WebsiteManager() {
                 />
               </Space>
               <Space>
-                <Button type="primary" icon={<PlusOutlined />} onClick={confirmAdd}>
+                <Button type="primary" icon={<PlusOutlined />} onClick={confirmAdd} loading={saving}>
                   确认添加
                 </Button>
                 <Button icon={<CloseOutlined />} onClick={cancelAdd}>
