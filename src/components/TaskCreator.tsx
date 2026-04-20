@@ -4,7 +4,7 @@ import { PlusOutlined, DeleteOutlined, CopyOutlined, CheckCircleOutlined, Settin
 import dayjs from 'dayjs';
 import { useTasks } from '../hooks/useSupabase';
 import { supabase } from '../supabase';
-import { CITIES, WEBSITES as DEFAULT_WEBSITES, Article } from '../types';
+import { CITIES, WEBSITES as DEFAULT_WEBSITES, type Article } from '../types';
 
 const { TextArea } = Input;
 const { Text, Title } = Typography;
