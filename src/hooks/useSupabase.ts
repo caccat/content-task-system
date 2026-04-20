@@ -83,10 +83,18 @@ export function useTasks() {
 
     console.log('任务创建成功:', data);
 
-    const articlesToInsert = Array.from({ length: taskData.quantity }, () => ({
+    // 从 taskData 中获取网站和备注信息
+    const websites = taskData.websites || [];
+    const writingSuggestions = taskData.writing_suggestions || '';
+
+    const articlesToInsert = Array.from({ length: taskData.quantity }, (_, index) => ({
       task_id: (data as Task).id,
       content: '',
       status: 'draft' as const,
+      // 如果有多个网站，按顺序分配；如果只有一个网站，所有文章都用这个网站
+      website: websites.length > 0 ? websites[index % websites.length] : null,
+      // 将写作建议作为备注保存
+      notes: writingSuggestions || null,
     }));
 
     console.log('准备创建文章:', articlesToInsert);
