@@ -14,6 +14,8 @@ export interface Article {
   status: 'draft' | 'ready' | 'published';
   published_at: string | null;
   published_by: string | null;
+  website?: string | null;
+  notes?: string | null;
 }
 
 export interface Task {

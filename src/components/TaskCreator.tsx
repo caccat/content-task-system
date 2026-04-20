@@ -1032,7 +1032,21 @@ function CreatedTasksList() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [detailModal, setDetailModal] = useState<{ visible: boolean; articles: Article[]; title: string }>({ visible: false, articles: [], title: '' });
   const [editModal, setEditModal] = useState<{ visible: boolean; record: any; tasks: any[] }>({ visible: false, record: null, tasks: [] });
+  const [articleEditModal, setArticleEditModal] = useState<{ visible: boolean; article: Article | null }>({ visible: false, article: null });
+  const [managedWebsites, setManagedWebsites] = useState<{id: string; name: string; platform: string}[]>([]);
   const promptTypes = usePromptTypes();
+
+  // 加载管理的网站
+  useEffect(() => {
+    const saved = localStorage.getItem('managedWebsites');
+    if (saved) {
+      try {
+        setManagedWebsites(JSON.parse(saved));
+      } catch {
+        setManagedWebsites([]);
+      }
+    }
+  }, []);
 
   // 如果有错误，显示错误信息
   if (error) {
@@ -1134,8 +1148,40 @@ function CreatedTasksList() {
 
   // 处理文章编辑
   const handleEditArticle = (article: Article) => {
-    // TODO: 实现编辑功能
-    message.info('编辑功能待实现');
+    setArticleEditModal({ visible: true, article });
+  };
+
+  // 保存文章编辑
+  const handleSaveArticleEdit = async (values: { website: string; notes: string }) => {
+    if (!articleEditModal.article) return;
+    
+    try {
+      const { error } = await supabase
+        .from('articles')
+        .update({
+          website: values.website || null,
+          notes: values.notes || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', articleEditModal.article.id);
+
+      if (error) throw error;
+
+      message.success('修改成功');
+      setArticleEditModal({ visible: false, article: null });
+      refreshTasks();
+      // 更新详情弹窗中的文章数据
+      setDetailModal(prev => ({
+        ...prev,
+        articles: prev.articles.map(a =>
+          a.id === articleEditModal.article!.id
+            ? { ...a, website: values.website || null, notes: values.notes || null }
+            : a
+        ),
+      }));
+    } catch (err) {
+      message.error('修改失败');
+    }
   };
 
   // 处理任务编辑
@@ -1402,6 +1448,61 @@ function CreatedTasksList() {
                   保存
                 </Button>
                 <Button onClick={() => setEditModal({ visible: false, record: null, tasks: [] })}>
+                  取消
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        )}
+      </Modal>
+
+      {/* 编辑文章弹窗 */}
+      <Modal
+        title="编辑文章"
+        open={articleEditModal.visible}
+        onCancel={() => setArticleEditModal({ visible: false, article: null })}
+        footer={null}
+        width={500}
+      >
+        {articleEditModal.article && (
+          <Form
+            layout="vertical"
+            onFinish={handleSaveArticleEdit}
+            initialValues={{
+              website: articleEditModal.article.website || '',
+              notes: articleEditModal.article.notes || '',
+            }}
+          >
+            <Form.Item
+              name="website"
+              label="发布网站"
+            >
+              <Select
+                placeholder="选择发布网站"
+                allowClear
+                options={managedWebsites.map(w => ({
+                  label: `${w.name} (${w.platform})`,
+                  value: w.id,
+                }))}
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="notes"
+              label="备注"
+            >
+              <Input.TextArea
+                placeholder="输入备注信息"
+                rows={3}
+              />
+            </Form.Item>
+
+            <Form.Item>
+              <Space>
+                <Button type="primary" htmlType="submit">
+                  保存
+                </Button>
+                <Button onClick={() => setArticleEditModal({ visible: false, article: null })}>
                   取消
                 </Button>
               </Space>
