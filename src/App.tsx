@@ -476,7 +476,7 @@ function App() {
               }
             } else if (key === 'creator') {
               setCurrentRole('creator');
-              setCreatorSubPage('single');
+              setCreatorSubPage('create');
               setOpenKeys(['creator']);
             } else if (key === 'writer') {
               setCurrentRole('writer');

@@ -1377,7 +1377,7 @@ export default function TaskCreator({ defaultView = 'create' }: { defaultView?: 
       <Card title="创建内容生产和发布任务" bordered={false}>
         <Tabs
           activeKey={activeMainTab}
-          onChange={setActiveMainTab}
+          onChange={(key) => setActiveMainTab(key as 'create' | 'created')}
           items={[
             {
               key: 'create',
