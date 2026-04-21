@@ -103,8 +103,8 @@ interface BatchTask {
   title: string;
 }
 
-// 调用 Vercel Edge Function 生成文章
-const generateArticles = async (tasks: BatchTask[], apiKey: string): Promise<any> => {
+// 调用 Vercel Edge Function 生成文章（API Key 由 Edge Function 使用环境变量）
+const generateArticles = async (tasks: BatchTask[]): Promise<any> => {
   const generateTasks = tasks.map(t => ({
     city: t.task.city,
     prompt_type: t.task.prompt_type,
@@ -115,7 +115,7 @@ const generateArticles = async (tasks: BatchTask[], apiKey: string): Promise<any
   const response = await fetch('/api/generate-articles', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tasks: generateTasks, apiKey }),
+    body: JSON.stringify({ tasks: generateTasks }),
   });
 
   if (!response.ok) {
@@ -557,13 +557,6 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
       return;
     }
 
-    const apiKey = settings['deepseek_api_key'];
-    if (!apiKey) {
-      message.error('请先在设置中配置 DeepSeek API Key');
-      onOpenSettings?.();
-      return;
-    }
-
     setGenerating(true);
     setGenerationProgress(0);
 
@@ -573,8 +566,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         title: batchTitles[task.id],
       }));
 
-      // 调用 Edge Function 生成文章
-      const result = await generateArticles(batchTasks, apiKey);
+      // 调用 Edge Function 生成文章（API Key 由 Edge Function 使用环境变量）
+      const result = await generateArticles(batchTasks);
 
       if (result.success) {
         // 保存生成的文章到 Supabase
