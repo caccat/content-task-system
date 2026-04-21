@@ -654,16 +654,16 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
           </Text>
         </div>
         <Space>
-          {selectedRowKeys.length > 0 && (
-            <Button
-              type="primary"
-              icon={<RobotOutlined />}
-              onClick={handleOpenBatchModal}
-              style={{ borderRadius: 8 }}
-            >
-              批量 AI 生成 ({selectedRowKeys.length})
-            </Button>
-          )}
+          {/* 始终显示批量 AI 生成按钮 */}
+          <Button
+            type="primary"
+            icon={<RobotOutlined />}
+            onClick={handleOpenBatchModal}
+            style={{ borderRadius: 8 }}
+            disabled={selectedRowKeys.length === 0}
+          >
+            批量 AI 生成 {selectedRowKeys.length > 0 && `(${selectedRowKeys.length})`}
+          </Button>
           <Radio.Group
             value={settings['feishu_notify_mode'] || 'immediate'}
             onChange={async (e) => {
