@@ -498,8 +498,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     },
   ];
 
-  // 表格数据源
-  const tableData = selectedTasks.map(task => ({
+  // 表格数据源 - 显示所有符合条件的任务
+  const tableData = filteredTasks.map(task => ({
     key: task.id,
     task,
     city: task.city,
