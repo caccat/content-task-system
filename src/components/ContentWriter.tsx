@@ -137,11 +137,12 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   };
 
   // 标记为准备发布（ready 状态）
-  const handleMarkReady = async (article: Article, settings: Record<string, string>) => {
+  const handleMarkReady = async (article: Article, settings: Record<string, string>, closeModal: () => void) => {
     try {
       await updateArticle(article.id, { status: 'ready' });
       message.success('已标记为准备发布');
-      setEditingArticle(null); // 关闭编辑弹窗
+      setEditingArticle(null); // 关闭编辑内容的子弹窗
+      closeModal(); // 关闭编辑文章主弹窗
 
       // 获取通知模式设置
       const notifyMode = settings['feishu_notify_mode'] || 'immediate';
@@ -266,7 +267,7 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
                   key="ready"
                   type="primary"
                   icon={<CheckCircleOutlined />}
-                  onClick={() => handleMarkReady(article, settings)}
+                  onClick={() => handleMarkReady(article, settings, onClose)}
                   size="small"
                   disabled={!article.content}
                   title={!article.content ? '请先编辑添加内容' : ''}
