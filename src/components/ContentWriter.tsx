@@ -5,10 +5,21 @@ import { useTasks, useArticles } from '../hooks/useSupabase';
 import { useSettings } from '../hooks/useSettings';
 import { usePrompts } from '../hooks/usePrompts';
 import { useWebsites } from '../hooks/useWebsites';
-import type { TaskWithArticles, Article } from '../types';
+import type { TaskWithArticles, Article, Website } from '../types';
 import { CITIES } from '../types';
 import dayjs from 'dayjs';
 import RichTextEditor from './RichTextEditor';
+
+// 获取网站显示名称的工具函数
+const getWebsiteLabels = (websiteIds: string[], websites: Website[]) => {
+  if (websites.length === 0) {
+    return websiteIds; // 加载中时显示原始ID
+  }
+  return websiteIds.map(w => {
+    const site = websites.find(s => s.id === w);
+    return site ? `${site.name} (${site.platform})` : w;
+  });
+};
 
 // 发送飞书通知（单条）
 const sendFeishuNotification = async (webhook: string, task: TaskWithArticles, article: Article) => {
@@ -98,6 +109,7 @@ const usePromptTypes = () => {
 
 function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArticles; visible: boolean; onClose: () => void; settings: Record<string, string> }) {
   const { articles, updateArticle, loading } = useArticles(task.id);
+  const { websites: articleEditorWebsites } = useWebsites();
   const [editingArticle, setEditingArticle] = useState<Article | null>(null);
   const [content, setContent] = useState('');
 
@@ -172,17 +184,6 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   const { websites, loading: websitesLoading } = useWebsites();
   const { prompts, loading: promptsLoading } = usePrompts();
 
-  // 获取网站名称
-  const getWebsiteLabels = (websiteIds: string[]) => {
-    if (websitesLoading || websites.length === 0) {
-      return websiteIds; // 加载中时显示原始ID
-    }
-    return websiteIds.map(w => {
-      const site = websites.find((s: any) => s.id === w);
-      return site ? `${site.name} (${site.platform})` : w;
-    });
-  };
-
   // 获取提示词类型名称
   const getPromptTypeLabel = (promptTypeId: string) => {
     if (promptsLoading || prompts.length === 0) {
@@ -208,7 +209,7 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
           </div>
           <div>
             <Text strong>发布网站：</Text>
-            {getWebsiteLabels(task.websites).map((site, idx) => (
+            {getWebsiteLabels(task.websites, websites).map((site, idx) => (
               <Tag key={idx} color="green">{site}</Tag>
             ))}
           </div>
@@ -329,6 +330,7 @@ interface ContentWriterProps {
 
 export default function ContentWriter({ defaultStatus, onOpenSettings }: ContentWriterProps) {
   const { tasks, loading, error, deleteTask, refreshTasks } = useTasks();
+  const { websites } = useWebsites(); // 获取网站数据用于显示
   const [selectedTask, setSelectedTask] = useState<TaskWithArticles | null>(null);
   const promptTypes = usePromptTypes();
   const { settings, setSetting } = useSettings();
@@ -645,7 +647,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                     <div>
                       <div style={{ fontSize: 12, color: '#888' }}>发布网站</div>
                       <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {getWebsiteLabels(task.websites).join('、')}
+                        {getWebsiteLabels(task.websites, websites).join('、')}
                       </div>
                     </div>
                   </div>
