@@ -1,9 +1,11 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+
 // DeepSeek API 配置
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = 'deepseek-chat';
 
 // 生成单篇文章
-async function generateArticle(city, promptContent, writingSuggestions, apiKey) {
+async function generateArticle(city: string, promptContent: string, writingSuggestions: string, apiKey: string): Promise<string> {
   if (!promptContent || promptContent.trim() === '') {
     throw new Error('提示词内容为空，请先在文章提示词管理中填写提示词内容');
   }
@@ -41,7 +43,7 @@ async function generateArticle(city, promptContent, writingSuggestions, apiKey) 
     throw new Error(`DeepSeek API 错误: ${response.status} - ${errorData}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as any;
   
   if (!data.choices || !data.choices[0] || !data.choices[0].message) {
     throw new Error('DeepSeek API 返回数据格式错误');
@@ -51,7 +53,7 @@ async function generateArticle(city, promptContent, writingSuggestions, apiKey) 
 }
 
 // 从 Supabase 获取提示词内容
-async function getPromptContent(promptTypeId, supabaseUrl, supabaseKey) {
+async function getPromptContent(promptTypeId: string, supabaseUrl: string, supabaseKey: string): Promise<string> {
   if (!supabaseUrl || !supabaseKey) {
     throw new Error('未配置 Supabase 环境变量');
   }
@@ -70,7 +72,7 @@ async function getPromptContent(promptTypeId, supabaseUrl, supabaseKey) {
     throw new Error(`获取提示词失败: ${response.status}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as any[];
   
   if (!data || data.length === 0) {
     throw new Error(`未找到提示词类型 ID: ${promptTypeId}`);
@@ -79,29 +81,22 @@ async function getPromptContent(promptTypeId, supabaseUrl, supabaseKey) {
   return data[0].content;
 }
 
-export default async function handler(request) {
-  // 处理 CORS 预检请求
-  if (request.method === 'OPTIONS') {
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
-    });
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // 设置 CORS 头
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).json({ ok: true });
   }
 
-  if (request.method !== 'POST') {
-    return new Response(JSON.stringify({ error: '只支持 POST 请求' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' },
-    });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: '只支持 POST 请求' });
   }
 
   try {
-    const body = await request.json();
+    const body = req.body || {};
     const { tasks } = body;
     
     // 从 Vercel 环境变量获取 API Key
@@ -110,20 +105,14 @@ export default async function handler(request) {
     const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
     if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
-      return new Response(JSON.stringify({ error: '请提供有效的任务列表' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return res.status(400).json({ error: '请提供有效的任务列表' });
     }
 
     if (!apiKey) {
-      return new Response(JSON.stringify({ error: '未配置 DeepSeek API Key' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return res.status(400).json({ error: '未配置 DeepSeek API Key' });
     }
 
-    const results = [];
+    const results: any[] = [];
     
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
@@ -156,7 +145,7 @@ export default async function handler(request) {
           index: i,
           content,
         });
-      } catch (error) {
+      } catch (error: any) {
         results.push({
           success: false,
           index: i,
@@ -169,25 +158,19 @@ export default async function handler(request) {
     const successCount = results.filter(r => r.success).length;
     const failCount = results.filter(r => !r.success).length;
 
-    return new Response(JSON.stringify({
+    return res.status(200).json({
       success: failCount === 0,
       total: tasks.length,
       successCount,
       failCount,
       results,
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('批量生成文章失败:', error);
-    return new Response(JSON.stringify({
+    return res.status(500).json({
       error: '服务器错误',
       message: error.message || '未知错误',
-    }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
     });
   }
 }
