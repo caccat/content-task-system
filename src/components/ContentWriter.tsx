@@ -607,7 +607,12 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         setSelectedRowKeys([]);
         refreshTasks();
       } else {
-        message.error(`部分生成失败，成功 ${result.successCount} 篇，失败 ${result.failCount} 篇`);
+        // 显示详细错误信息
+        const failedDetails = result.results
+          .filter((r: any) => !r.success)
+          .map((r: any) => `任务 ${r.taskIndex}: ${r.error}`)
+          .join('\n');
+        message.error(`部分生成失败，成功 ${result.successCount} 篇，失败 ${result.failCount} 篇\n${failedDetails}`);
       }
     } catch (error) {
       console.error('批量生成失败:', error);
