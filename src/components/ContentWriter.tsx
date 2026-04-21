@@ -129,6 +129,7 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
     try {
       await updateArticle(article.id, { status: 'ready' });
       message.success('已标记为准备发布');
+      setEditingArticle(null); // 关闭编辑弹窗
 
       // 获取通知模式设置
       const notifyMode = settings['feishu_notify_mode'] || 'immediate';

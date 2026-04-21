@@ -20,6 +20,7 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
       await publishArticle(showConfirm.id, '');
       message.success('文章标记为已发布');
       setShowConfirm(null);
+      onClose(); // 关闭任务详情弹窗
     } catch {
       message.error('操作失败');
     }
@@ -197,6 +198,15 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
       return { color: 'processing', text: '待发布', value: 'ready' };
     }
     return { color: 'default', text: '未生成', value: 'draft' };
+  };
+
+  // 获取网站显示名称（主组件作用域）
+  const getWebsiteLabels = (websites: string[]) => {
+    if (managedWebsites.length === 0) return [];
+    return websites.map(w => {
+      const site = managedWebsites.find(site => site.id === w);
+      return site ? `${site.name} (${site.platform})` : w;
+    });
   };
 
   // 按选择日期统计（按截止日期）
@@ -472,8 +482,10 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
                       <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a' }}>{task.quantity} 篇</div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 12, color: '#888' }}>平台</div>
-                      <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a' }}>{task.websites.length} 个</div>
+                      <div style={{ fontSize: 12, color: '#888' }}>发布网站</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {getWebsiteLabels(task.websites).join('、')}
+                      </div>
                     </div>
                   </div>
                   <Button
