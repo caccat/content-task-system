@@ -297,16 +297,12 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
 
   const [rows, setRows] = useState<BatchTaskRow[]>([createEmptyRow()]);
   const [previewVisible, setPreviewVisible] = useState(false);
-
-  // 当提示词类型变化时，重置数据
-  useEffect(() => {
-    if (promptTypes.length > 0) {
-      setRows([createEmptyRow()]);
-    }
-  }, [promptTypes.length]);
+  const [draftRestored, setDraftRestored] = useState(false);
 
   // 页面加载时恢复草稿
   useEffect(() => {
+    if (draftRestored) return; // 避免重复恢复
+    
     const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
     if (savedDraft) {
       try {
@@ -318,13 +314,32 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
             deadline: dayjs(row.deadline),
           }));
           setRows(restoredRows);
+          setDraftRestored(true);
           message.info('已恢复上次保存的草稿');
         }
       } catch (e) {
         console.error('恢复草稿失败:', e);
       }
     }
-  }, []);
+  }, [draftRestored]);
+
+  // 当提示词类型变化时，如果还没有恢复过草稿，则初始化数据
+  useEffect(() => {
+    if (promptTypes.length > 0 && !draftRestored) {
+      // 只有在没有恢复过草稿时才创建空行
+      const configs: Record<string, WebsiteConfig[]> = {};
+      promptTypes.forEach(type => {
+        configs[type.id] = [];
+      });
+      setRows([{
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        city: '',
+        totalCount: 0,
+        deadline: dayjs(),
+        promptTypeConfigs: configs,
+      }]);
+    }
+  }, [promptTypes.length, draftRestored]);
 
   // 添加行
   const addRow = () => {
