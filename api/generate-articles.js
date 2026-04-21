@@ -79,22 +79,29 @@ async function getPromptContent(promptTypeId, supabaseUrl, supabaseKey) {
   return data[0].content;
 }
 
-module.exports = async (req, res) => {
-  // 设置 CORS 头
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).json({ ok: true });
+export default async function handler(request) {
+  // 处理 CORS 预检请求
+  if (request.method === 'OPTIONS') {
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      },
+    });
   }
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: '只支持 POST 请求' });
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: '只支持 POST 请求' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
   try {
-    const body = req.body || {};
+    const body = await request.json();
     const { tasks } = body;
     
     // 从 Vercel 环境变量获取 API Key
@@ -103,11 +110,17 @@ module.exports = async (req, res) => {
     const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
     if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
-      return res.status(400).json({ error: '请提供有效的任务列表' });
+      return new Response(JSON.stringify({ error: '请提供有效的任务列表' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     if (!apiKey) {
-      return res.status(400).json({ error: '未配置 DeepSeek API Key' });
+      return new Response(JSON.stringify({ error: '未配置 DeepSeek API Key' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const results = [];
@@ -156,19 +169,25 @@ module.exports = async (req, res) => {
     const successCount = results.filter(r => r.success).length;
     const failCount = results.filter(r => !r.success).length;
 
-    return res.status(200).json({
+    return new Response(JSON.stringify({
       success: failCount === 0,
       total: tasks.length,
       successCount,
       failCount,
       results,
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
     console.error('批量生成文章失败:', error);
-    return res.status(500).json({
+    return new Response(JSON.stringify({
       error: '服务器错误',
       message: error.message || '未知错误',
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
     });
   }
-};
+}
