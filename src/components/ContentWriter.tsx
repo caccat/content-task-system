@@ -781,7 +781,13 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         locale={{ emptyText: '暂无符合条件的任务' }}
         rowKey="key"
         onRow={(record) => ({
-          onClick: () => setSelectedTask(record.task),
+          onClick: (e) => {
+            // 防止点击标题输入框时打开任务详情
+            const target = e.target as HTMLElement;
+            if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+              setSelectedTask(record.task);
+            }
+          },
           style: { cursor: 'pointer' },
         })}
         footer={() => (
