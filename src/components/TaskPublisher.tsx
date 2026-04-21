@@ -202,7 +202,7 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
 
   // 获取网站显示名称（主组件作用域）
   const getWebsiteLabels = (websites: string[]) => {
-    if (managedWebsites.length === 0) return [];
+    if (managedWebsites.length === 0) return websites; // 加载中时显示原始ID
     return websites.map(w => {
       const site = managedWebsites.find(site => site.id === w);
       return site ? `${site.name} (${site.platform})` : w;
