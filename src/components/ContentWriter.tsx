@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Card, List, Badge, Tag, Button, Modal, Input, message, Typography, Space, Progress, Popconfirm, Select, Row, Col, DatePicker, Radio, Table, Checkbox, Spin, Alert } from 'antd';
+import { Card, List, Badge, Tag, Button, Modal, Input, message, Typography, Space, Progress, Popconfirm, Select, Row, Col, DatePicker, Radio, Table, Checkbox, Spin, Alert, Empty } from 'antd';
 import { EditOutlined, FileTextOutlined, DeleteOutlined, ExclamationCircleOutlined, EyeOutlined, CheckCircleOutlined, UndoOutlined, FilterOutlined, CalendarOutlined, SettingOutlined, RobotOutlined } from '@ant-design/icons';
 import { useTasks, useArticles } from '../hooks/useSupabase';
 import { useSettings } from '../hooks/useSettings';
@@ -360,6 +360,28 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   const [selectedTask, setSelectedTask] = useState<TaskWithArticles | null>(null);
   const promptTypes = usePromptTypes();
   const { settings, setSetting } = useSettings();
+  const { websites } = useWebsites();
+  const { prompts } = usePrompts();
+
+  // 获取网站名称
+  const getWebsiteLabels = (websiteIds: string[]) => {
+    if (websites.length === 0) {
+      return [];
+    }
+    return websiteIds.map(w => {
+      const site = websites.find((s: any) => s.id === w);
+      return site ? `${site.name} (${site.platform})` : w;
+    });
+  };
+
+  // 获取提示词类型名称
+  const getPromptTypeLabel = (promptTypeId: string) => {
+    if (prompts.length === 0) {
+      return promptTypeId;
+    }
+    const prompt = prompts.find((p: any) => p.id === promptTypeId);
+    return prompt ? prompt.type : promptTypeId;
+  };
 
   // 筛选状态
   const [filterCity, setFilterCity] = useState<string | undefined>(undefined);
@@ -373,6 +395,9 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   const [batchTitles, setBatchTitles] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
+  
+  // 生成模式：人工生成 vs AI生成（仅在未生成状态时显示）
+  const [generateMode, setGenerateMode] = useState<'manual' | 'ai'>('manual');
 
   // 当 defaultStatus 变化时更新 filterStatus
   useEffect(() => {
@@ -771,8 +796,30 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         </Row>
       </Card>
 
-      {/* 任务列表 */}
-      <Table
+      {/* 生成模式切换（仅在未生成状态时显示） */}
+      {filterStatus === 'draft' && (
+        <Card size="small" style={{ marginBottom: 16 }}>
+          <Space>
+            <Text strong>选择生成方式：</Text>
+            <Radio.Group
+              value={generateMode}
+              onChange={(e) => setGenerateMode(e.target.value)}
+              optionType="button"
+              buttonStyle="solid"
+            >
+              <Radio.Button value="manual">👤 人工生成</Radio.Button>
+              <Radio.Button value="ai">🤖 AI 生成</Radio.Button>
+            </Radio.Group>
+            <Text type="secondary">
+              {generateMode === 'manual' ? '点击任务卡片，手动编辑每篇文章' : '勾选任务后批量调用 AI 生成文章'}
+            </Text>
+          </Space>
+        </Card>
+      )}
+
+      {/* 任务列表 - AI模式显示表格 */}
+      {generateMode === 'ai' ? (
+        <Table
         rowSelection={rowSelection}
         columns={columns}
         dataSource={tableData}
@@ -796,6 +843,40 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
           </div>
         )}
       />
+      ) : (
+        /* 人工生成模式：显示任务卡片列表 */
+        <div>
+          {filteredTasks.length === 0 ? (
+            <Empty description="暂无未生成的任务" />
+          ) : (
+            filteredTasks.map(task => (
+              <Card
+                key={task.id}
+                size="small"
+                style={{ marginBottom: 12, cursor: 'pointer' }}
+                onClick={() => setSelectedTask(task)}
+              >
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Space>
+                      <Text strong style={{ fontSize: 16 }}>{task.city}</Text>
+                      {getWebsiteLabels(task.websites).map((site, idx) => (
+                        <Tag key={idx} color="green">{site}</Tag>
+                      ))}
+                    </Space>
+                    <Tag color={getTaskProgress(task).color}>{getTaskProgress(task).text}</Tag>
+                  </div>
+                  <Text type="secondary">
+                    提示词类型：{getPromptTypeLabel(task.prompt_type)} | 
+                    文章数：{task.quantity} | 
+                    截止：{dayjs(task.deadline).format('YYYY-MM-DD')}
+                  </Text>
+                </Space>
+              </Card>
+            ))
+          )}
+        </div>
+      )}
 
       {/* 批量生成弹窗 */}
       <Modal
