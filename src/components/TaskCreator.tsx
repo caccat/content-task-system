@@ -12,6 +12,9 @@ const { TextArea } = Input;
 const { Text, Title } = Typography;
 const { Panel } = Collapse;
 
+// 草稿存储键
+const DRAFT_STORAGE_KEY = 'batch_task_draft';
+
 // 从 Supabase 读取提示词类型
 const usePromptTypes = () => {
   const { prompts } = usePrompts();
@@ -301,6 +304,22 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
       setRows([createEmptyRow()]);
     }
   }, [promptTypes.length]);
+
+  // 页面加载时恢复草稿
+  useEffect(() => {
+    const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (savedDraft) {
+      try {
+        const draft = JSON.parse(savedDraft);
+        if (Array.isArray(draft) && draft.length > 0) {
+          setRows(draft);
+          message.info('已恢复上次保存的草稿');
+        }
+      } catch (e) {
+        console.error('恢复草稿失败:', e);
+      }
+    }
+  }, []);
 
   // 添加行
   const addRow = () => {
@@ -637,6 +656,17 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
     setPreviewVisible(true);
   };
 
+  // 保存草稿
+  const handleSaveDraft = () => {
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(rows));
+    message.success('草稿已保存');
+  };
+
+  // 清空草稿
+  const clearDraft = () => {
+    localStorage.removeItem(DRAFT_STORAGE_KEY);
+  };
+
   // 确认创建
   const handleCreate = async () => {
     const tasks = generateTasks();
@@ -648,6 +678,7 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
     setPreviewVisible(false);
     setRows([createEmptyRow()]);
     setSelectedRowKeys([]);
+    clearDraft(); // 创建成功后清空草稿
   };
 
   // 计算统计
@@ -704,6 +735,9 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
             </Button>
             <Button icon={<SettingOutlined />} onClick={openDetailConfig} disabled={selectedRowKeys.length !== 1}>
               详细配置
+            </Button>
+            <Button icon={<CopyOutlined />} onClick={handleSaveDraft}>
+              保存草稿
             </Button>
             <Button type="primary" icon={<EyeOutlined />} onClick={handlePreview}>
               预览并全部创建
