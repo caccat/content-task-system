@@ -175,7 +175,7 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   // 获取网站名称
   const getWebsiteLabels = (websiteIds: string[]) => {
     if (websitesLoading || websites.length === 0) {
-      return ['加载中...'];
+      return websiteIds; // 加载中时显示原始ID
     }
     return websiteIds.map(w => {
       const site = websites.find((s: any) => s.id === w);
@@ -643,8 +643,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                       <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a' }}>{task.quantity} 篇</div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 12, color: '#888' }}>平台</div>
-                      <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a' }}>{task.websites.length} 个</div>
+                      <div style={{ fontSize: 12, color: '#888' }}>发布网站</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {getWebsiteLabels(task.websites).join('、')}
+                      </div>
                     </div>
                   </div>
                   <Button
