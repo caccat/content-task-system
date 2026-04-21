@@ -312,7 +312,12 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
       try {
         const draft = JSON.parse(savedDraft);
         if (Array.isArray(draft) && draft.length > 0) {
-          setRows(draft);
+          // 将 deadline 字符串转换为 dayjs 对象
+          const restoredRows = draft.map((row: any) => ({
+            ...row,
+            deadline: dayjs(row.deadline),
+          }));
+          setRows(restoredRows);
           message.info('已恢复上次保存的草稿');
         }
       } catch (e) {
