@@ -2,10 +2,6 @@
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = 'deepseek-chat';
 
-// Supabase 配置
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-
 // 生成单篇文章
 async function generateArticle(city, promptContent, writingSuggestions, apiKey) {
   if (!promptContent || promptContent.trim() === '') {
@@ -55,17 +51,17 @@ async function generateArticle(city, promptContent, writingSuggestions, apiKey) 
 }
 
 // 从 Supabase 获取提示词内容
-async function getPromptContent(promptTypeId) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+async function getPromptContent(promptTypeId, supabaseUrl, supabaseKey) {
+  if (!supabaseUrl || !supabaseKey) {
     throw new Error('未配置 Supabase 环境变量');
   }
 
   const response = await fetch(
-    `${SUPABASE_URL}/rest/v1/prompts?id=eq.${promptTypeId}&select=content`,
+    `${supabaseUrl}/rest/v1/prompts?id=eq.${promptTypeId}&select=content`,
     {
       headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
       },
     }
   );
@@ -83,13 +79,14 @@ async function getPromptContent(promptTypeId) {
   return data[0].content;
 }
 
-module.exports = async function handler(req, res) {
+module.exports = async (req, res) => {
+  // 设置 CORS 头
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    return res.status(200).json({ ok: true });
   }
 
   if (req.method !== 'POST') {
@@ -99,7 +96,11 @@ module.exports = async function handler(req, res) {
   try {
     const body = req.body || {};
     const { tasks } = body;
-    const apiKey = body.apiKey || process.env.DEEPSEEK_API_KEY;
+    
+    // 从 Vercel 环境变量获取 API Key
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
     if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
       return res.status(400).json({ error: '请提供有效的任务列表' });
@@ -116,7 +117,7 @@ module.exports = async function handler(req, res) {
       
       try {
         // 先获取提示词内容
-        const promptContent = await getPromptContent(task.prompt_type);
+        const promptContent = await getPromptContent(task.prompt_type, supabaseUrl, supabaseKey);
         
         // 检查提示词内容是否为空
         if (!promptContent || promptContent.trim() === '') {
