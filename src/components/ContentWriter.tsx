@@ -992,6 +992,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   const [filterPromptType, setFilterPromptType] = useState<string | undefined>(undefined);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
 
+  // 批量生成弹窗状态
+  const [batchModalVisible, setBatchModalVisible] = useState(false);
+  const [batchTasks, setBatchTasks] = useState<TaskWithArticles[]>([]);
+
   // 分类任务（仅针对未生成页面）
   const manualTasks = useMemo(() => {
     return tasks.filter(task => {
@@ -1090,28 +1094,16 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         },
       });
     } else {
-      // 批量任务：使用子组件
-      const [modalVisible, setModalVisible] = useState(true);
-
-      if (modalVisible) {
-        Modal.confirm({
-          title: '🤖 批量 AI 生成文章',
-          icon: <RobotOutlined />,
-          content: (
-            <BatchTitleEditor
-              tasks={tasksToGenerate}
-              onConfirm={async (titles) => {
-                setModalVisible(false);
-                await generateWithAi(tasksToGenerate, titles);
-              }}
-            />
-          ),
-          okText: '取消',
-          cancelText: '取消',
-          onCancel: () => setModalVisible(false),
-        });
-      }
+      // 批量任务：显示弹窗
+      setBatchTasks(tasksToGenerate);
+      setBatchModalVisible(true);
     }
+  };
+
+  // 批量生成确认处理
+  const handleBatchGenerate = async (titles: string[]) => {
+    setBatchModalVisible(false);
+    await generateWithAi(batchTasks, titles);
   };
   
   // 实际执行 AI 生成的函数
@@ -1329,6 +1321,20 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
 
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+      {/* 批量生成弹窗 */}
+      <Modal
+        title="🤖 批量 AI 生成文章"
+        open={batchModalVisible}
+        onCancel={() => setBatchModalVisible(false)}
+        footer={null}
+        width={600}
+      >
+        <BatchTitleEditor
+          tasks={batchTasks}
+          onConfirm={handleBatchGenerate}
+        />
+      </Modal>
+
       {/* 页面标题 */}
       <div style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
