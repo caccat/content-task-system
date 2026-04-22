@@ -56,6 +56,82 @@ function getArticleTitle(taskId: string): string | null {
   return null;
 }
 
+// 批量生成标题编辑器子组件
+function BatchTitleEditor({ 
+  tasks, 
+  onConfirm 
+}: { 
+  tasks: TaskWithArticles[]; 
+  onConfirm: (titles: string[]) => void;
+}) {
+  const [batchTitles, setBatchTitles] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    tasks.forEach((task) => {
+      const saved = getArticleTitle(task.id);
+      initial[task.id] = saved || `${task.city}相关文章`;
+    });
+    return initial;
+  });
+
+  return (
+    <div style={{ padding: '8px 0', maxHeight: 400, overflowY: 'auto' }}>
+      <p style={{ marginBottom: 12, color: '#666' }}>
+        请为每个任务输入标题（共 {tasks.length} 个任务）：
+      </p>
+      <div style={{ border: '1px solid #f0f0f0', borderRadius: 6 }}>
+        {/* 表头 */}
+        <div style={{ 
+          display: 'flex', 
+          background: '#fafafa', 
+          padding: '10px 12px', 
+          borderBottom: '1px solid #f0f0f0',
+          fontWeight: 500,
+          fontSize: 13
+        }}>
+          <div style={{ width: 120 }}>城市</div>
+          <div style={{ flex: 1 }}>标题</div>
+        </div>
+        {/* 表格行 */}
+        {tasks.map((task, idx) => (
+          <div key={task.id} style={{ 
+            display: 'flex', 
+            padding: '8px 12px', 
+            borderBottom: idx < tasks.length - 1 ? '1px solid #f0f0f0' : 'none',
+            alignItems: 'center'
+          }}>
+            <div style={{ width: 120, fontWeight: 500, color: '#1890ff' }}>
+              {task.city}
+            </div>
+            <div style={{ flex: 1 }}>
+              <Input
+                value={batchTitles[task.id] || ''}
+                onChange={(e) => setBatchTitles(prev => ({ ...prev, [task.id]: e.target.value }))}
+                placeholder="输入文章标题"
+                size="small"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      <Button 
+        type="primary" 
+        block 
+        style={{ marginTop: 16 }}
+        onClick={() => {
+          const titles = tasks.map(t => batchTitles[t.id]?.trim() || `${t.city}相关文章`);
+          if (titles.some(t => !t)) {
+            message.warning('请确保所有任务都填写了标题');
+            return;
+          }
+          onConfirm(titles);
+        }}
+      >
+        开始生成
+      </Button>
+    </div>
+  );
+}
+
 // 发送飞书通知
 const sendFeishuNotification = async (webhook: string, task: TaskWithArticles, article: Article) => {
   try {
@@ -1014,78 +1090,27 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         },
       });
     } else {
-      // 批量任务：表格形式，城市+标题两列
-      const [batchTitles, setBatchTitles] = useState<Record<string, string>>({});
+      // 批量任务：使用子组件
+      const [modalVisible, setModalVisible] = useState(true);
 
-      // 初始化标题（尝试从 localStorage 读取）
-      useEffect(() => {
-        const initial: Record<string, string> = {};
-        tasksToGenerate.forEach((task, index) => {
-          const saved = getArticleTitle(task.id);
-          initial[task.id] = saved || `${task.city}相关文章`;
+      if (modalVisible) {
+        Modal.confirm({
+          title: '🤖 批量 AI 生成文章',
+          icon: <RobotOutlined />,
+          content: (
+            <BatchTitleEditor
+              tasks={tasksToGenerate}
+              onConfirm={async (titles) => {
+                setModalVisible(false);
+                await generateWithAi(tasksToGenerate, titles);
+              }}
+            />
+          ),
+          okText: '取消',
+          cancelText: '取消',
+          onCancel: () => setModalVisible(false),
         });
-        setBatchTitles(initial);
-      }, []);
-
-      Modal.confirm({
-        title: '🤖 批量 AI 生成文章',
-        icon: <RobotOutlined />,
-        content: (
-          <div style={{ padding: '8px 0', maxHeight: 400, overflowY: 'auto' }}>
-            <p style={{ marginBottom: 12, color: '#666' }}>
-              请为每个任务输入标题（共 {tasksToGenerate.length} 个任务）：
-            </p>
-            <div style={{ border: '1px solid #f0f0f0', borderRadius: 6 }}>
-              {/* 表头 */}
-              <div style={{ 
-                display: 'flex', 
-                background: '#fafafa', 
-                padding: '10px 12px', 
-                borderBottom: '1px solid #f0f0f0',
-                fontWeight: 500,
-                fontSize: 13
-              }}>
-                <div style={{ width: 120 }}>城市</div>
-                <div style={{ flex: 1 }}>标题</div>
-              </div>
-              {/* 表格行 */}
-              {tasksToGenerate.map((task, idx) => (
-                <div key={task.id} style={{ 
-                  display: 'flex', 
-                  padding: '8px 12px', 
-                  borderBottom: idx < tasksToGenerate.length - 1 ? '1px solid #f0f0f0' : 'none',
-                  alignItems: 'center'
-                }}>
-                  <div style={{ width: 120, fontWeight: 500, color: '#1890ff' }}>
-                    {task.city}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <Input
-                      id={`batch-title-${task.id}`}
-                      value={batchTitles[task.id] || ''}
-                      onChange={(e) => setBatchTitles(prev => ({ ...prev, [task.id]: e.target.value }))}
-                      placeholder="输入文章标题"
-                      size="small"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ),
-        okText: '开始生成',
-        cancelText: '取消',
-        onOk: async () => {
-          const titles = tasksToGenerate.map(t => batchTitles[t.id]?.trim() || `${t.city}相关文章`);
-          
-          if (titles.some(t => !t)) {
-            message.warning('请确保所有任务都填写了标题');
-            return;
-          }
-          
-          await generateWithAi(tasksToGenerate, titles);
-        },
-      });
+      }
     }
   };
   
