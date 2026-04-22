@@ -29,6 +29,33 @@ function convertNewlinesToHtml(text: string): string {
   return htmlParagraphs.join('');
 }
 
+// localStorage 存取标题（仅限用户浏览器）
+const ARTICLE_TITLES_KEY = 'content_task_article_titles';
+
+function saveArticleTitle(taskId: string, title: string) {
+  try {
+    const stored = localStorage.getItem(ARTICLE_TITLES_KEY);
+    const titles = stored ? JSON.parse(stored) : {};
+    titles[taskId] = title;
+    localStorage.setItem(ARTICLE_TITLES_KEY, JSON.stringify(titles));
+  } catch (e) {
+    console.error('保存标题失败:', e);
+  }
+}
+
+function getArticleTitle(taskId: string): string | null {
+  try {
+    const stored = localStorage.getItem(ARTICLE_TITLES_KEY);
+    if (stored) {
+      const titles = JSON.parse(stored);
+      return titles[taskId] || null;
+    }
+  } catch (e) {
+    console.error('读取标题失败:', e);
+  }
+  return null;
+}
+
 // 发送飞书通知
 const sendFeishuNotification = async (webhook: string, task: TaskWithArticles, article: Article) => {
   try {
@@ -1076,6 +1103,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                 })
                 .eq('id', task.articles[0].id);
             }
+            // 保存标题到浏览器 localStorage
+            saveArticleTitle(task.id, userTitle);
             // 更新状态为已完成
             await updateAiStatus(task.id, 'completed');
           } else {
@@ -1117,6 +1146,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
+    // 从 localStorage 读取之前保存的标题
+    const savedTitle = getArticleTitle(taskId);
+    const defaultTitle = savedTitle || (task.city ? `${task.city}相关文章` : '');
+
     Modal.confirm({
       title: '🤖 重新生成文章',
       icon: <RobotOutlined />,
@@ -1128,7 +1161,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
             placeholder="输入文章标题，例如：人工智能在内容生产中的应用与未来"
             rows={2}
             style={{ width: '100%' }}
-            defaultValue={task.city ? `${task.city}相关文章` : ''}
+            defaultValue={defaultTitle}
           />
           <p style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
             系统将根据此标题重新生成文章内容
@@ -1182,6 +1215,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                 })
                 .eq('id', task.articles[0].id);
             }
+            // 保存新标题到浏览器 localStorage
+            saveArticleTitle(taskId, title);
             await updateAiStatus(taskId, 'completed');
             message.success({ content: '重新生成成功！', key: 'retry' });
           } else {
