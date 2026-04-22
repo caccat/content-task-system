@@ -412,20 +412,55 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
                 {selectedPrompt.content || '暂无内容'}
               </div>
             </div>
-            {selectedPrompt.example_url && (
+            {/* 多个示例链接 */}
+            {(selectedPrompt.example_urls?.length > 0 || selectedPrompt.example_url) && (
               <div style={{ marginTop: 16 }}>
                 <Text strong style={{ fontSize: 14 }}>文章示例：</Text>
-                <div style={{ 
-                  background: '#f0f9ff', 
-                  padding: 16, 
-                  borderRadius: 8, 
-                  marginTop: 8,
-                  border: '1px solid #91d5ff'
-                }}>
-                  <Text type="secondary">示例链接：</Text>
-                  <a href={selectedPrompt.example_url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8 }}>
-                    {selectedPrompt.example_url}
-                  </a>
+                <div style={{ marginTop: 8 }}>
+                  {/* 兼容旧数据：只有一个 example_url */}
+                  {selectedPrompt.example_urls?.length > 0 ? (
+                    selectedPrompt.example_urls.map((ex: any, index: number) => (
+                      <div 
+                        key={index}
+                        style={{ 
+                          background: '#f0f9ff', 
+                          padding: 12, 
+                          borderRadius: 8, 
+                          marginBottom: index < selectedPrompt.example_urls.length - 1 ? 8 : 0,
+                          border: '1px solid #91d5ff'
+                        }}
+                      >
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {ex.note || `示例 ${index + 1}：`}
+                        </Text>
+                        <a 
+                          href={ex.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          style={{ marginLeft: 8, wordBreak: 'break-all' }}
+                        >
+                          {ex.url}
+                        </a>
+                      </div>
+                    ))
+                  ) : selectedPrompt.example_url ? (
+                    <div style={{ 
+                      background: '#f0f9ff', 
+                      padding: 12, 
+                      borderRadius: 8, 
+                      border: '1px solid #91d5ff'
+                    }}>
+                      <Text type="secondary">示例链接：</Text>
+                      <a 
+                        href={selectedPrompt.example_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={{ marginLeft: 8, wordBreak: 'break-all' }}
+                      >
+                        {selectedPrompt.example_url}
+                      </a>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}

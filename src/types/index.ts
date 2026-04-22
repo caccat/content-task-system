@@ -27,13 +27,20 @@ export interface Website {
   price: number;
 }
 
+// 文章示例类型
+export interface ArticleExample {
+  note: string;  // 备注说明
+  url: string;   // 示例链接
+}
+
 export interface Prompt {
   id: string;
   created_at: string;
   updated_at: string;
   type: string;
   content: string;
-  example_url: string | null;
+  // example_url: string | null;  // 旧字段，保留兼容性
+  example_urls: ArticleExample[] | null;  // 新字段：多个示例
 }
 
 export interface AppSettings {
