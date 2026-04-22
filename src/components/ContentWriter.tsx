@@ -611,6 +611,248 @@ function AiGenerateSection({
   );
 }
 
+// 待发布页面组件（简单列表，不需要人工/AI区分）
+function ReadyPublishSection({
+  tasks,
+  loading,
+  onEditTask,
+  onDeleteTask,
+  websites,
+  prompts,
+}: {
+  tasks: TaskWithArticles[];
+  loading: boolean;
+  onEditTask: (task: TaskWithArticles) => void;
+  onDeleteTask: (task: TaskWithArticles, e: React.MouseEvent) => void;
+  websites: any[];
+  prompts: any[];
+}) {
+  const getWebsiteLabels = (websiteIds: string[]) => {
+    if (websites.length === 0) return [];
+    return websiteIds.map(w => {
+      const site = websites.find((s: any) => s.id === w);
+      return site ? `${site.name} (${site.platform})` : w;
+    });
+  };
+
+  const getPromptTypeLabel = (promptTypeId: string) => {
+    const prompt = prompts.find((p: any) => p.id === promptTypeId);
+    return prompt ? prompt.type : promptTypeId;
+  };
+
+  const columns = [
+    {
+      title: '城市',
+      dataIndex: 'city',
+      key: 'city',
+      width: 100,
+    },
+    {
+      title: '提示词类型',
+      dataIndex: 'prompt_type',
+      key: 'prompt_type',
+      width: 120,
+      render: (promptTypeId: string) => getPromptTypeLabel(promptTypeId),
+    },
+    {
+      title: '发布网站',
+      dataIndex: 'websites',
+      key: 'websites',
+      width: 200,
+      render: (websites: string[]) => (
+        <Space wrap>
+          {getWebsiteLabels(websites).map((site, idx) => (
+            <Tag key={idx} color="green">{site}</Tag>
+          ))}
+        </Space>
+      ),
+    },
+    {
+      title: '文章数',
+      dataIndex: 'quantity',
+      key: 'quantity',
+      width: 80,
+      render: (qty: number, record: TaskWithArticles) => `${record.completedCount}/${qty}`,
+    },
+    {
+      title: '截止日期',
+      dataIndex: 'deadline',
+      key: 'deadline',
+      width: 120,
+      render: (deadline: string) => dayjs(deadline).format('YYYY-MM-DD'),
+    },
+    {
+      title: '状态',
+      key: 'status',
+      width: 100,
+      render: () => <Tag color="processing">准备发布</Tag>,
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 150,
+      render: (_: any, record: TaskWithArticles) => (
+        <Space>
+          <Button
+            type="primary"
+            icon={<EditOutlined />}
+            onClick={() => onEditTask(record)}
+            size="small"
+          >
+            编辑
+          </Button>
+          <Popconfirm
+            title="确认删除"
+            description="确定要删除此任务吗？"
+            onConfirm={() => onDeleteTask(record, { stopPropagation: () => {} } as any)}
+            okText="删除"
+            cancelText="取消"
+          >
+            <Button danger icon={<DeleteOutlined />} size="small" type="text" />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <Text type="secondary" style={{ marginBottom: 16, display: 'block' }}>
+        共 {tasks.length} 个任务待发布
+      </Text>
+      <Table
+        columns={columns}
+        dataSource={tasks}
+        loading={loading}
+        pagination={false}
+        rowKey="id"
+        locale={{ emptyText: '暂无待发布的任务' }}
+      />
+    </div>
+  );
+}
+
+// 已完成页面组件
+function CompletedSection({
+  tasks,
+  loading,
+  onEditTask,
+  onDeleteTask,
+  websites,
+  prompts,
+}: {
+  tasks: TaskWithArticles[];
+  loading: boolean;
+  onEditTask: (task: TaskWithArticles) => void;
+  onDeleteTask: (task: TaskWithArticles, e: React.MouseEvent) => void;
+  websites: any[];
+  prompts: any[];
+}) {
+  const getWebsiteLabels = (websiteIds: string[]) => {
+    if (websites.length === 0) return [];
+    return websiteIds.map(w => {
+      const site = websites.find((s: any) => s.id === w);
+      return site ? `${site.name} (${site.platform})` : w;
+    });
+  };
+
+  const getPromptTypeLabel = (promptTypeId: string) => {
+    const prompt = prompts.find((p: any) => p.id === promptTypeId);
+    return prompt ? prompt.type : promptTypeId;
+  };
+
+  const columns = [
+    {
+      title: '城市',
+      dataIndex: 'city',
+      key: 'city',
+      width: 100,
+    },
+    {
+      title: '提示词类型',
+      dataIndex: 'prompt_type',
+      key: 'prompt_type',
+      width: 120,
+      render: (promptTypeId: string) => getPromptTypeLabel(promptTypeId),
+    },
+    {
+      title: '发布网站',
+      dataIndex: 'websites',
+      key: 'websites',
+      width: 200,
+      render: (websites: string[]) => (
+        <Space wrap>
+          {getWebsiteLabels(websites).map((site, idx) => (
+            <Tag key={idx} color="green">{site}</Tag>
+          ))}
+        </Space>
+      ),
+    },
+    {
+      title: '文章数',
+      dataIndex: 'quantity',
+      key: 'quantity',
+      width: 80,
+      render: (qty: number, record: TaskWithArticles) => `${record.completedCount}/${qty}`,
+    },
+    {
+      title: '截止日期',
+      dataIndex: 'deadline',
+      key: 'deadline',
+      width: 120,
+      render: (deadline: string) => dayjs(deadline).format('YYYY-MM-DD'),
+    },
+    {
+      title: '状态',
+      key: 'status',
+      width: 100,
+      render: () => <Tag color="success">已完成</Tag>,
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 150,
+      render: (_: any, record: TaskWithArticles) => (
+        <Space>
+          <Button
+            type="primary"
+            icon={<EditOutlined />}
+            onClick={() => onEditTask(record)}
+            size="small"
+          >
+            查看
+          </Button>
+          <Popconfirm
+            title="确认删除"
+            description="确定要删除此任务吗？"
+            onConfirm={() => onDeleteTask(record, { stopPropagation: () => {} } as any)}
+            okText="删除"
+            cancelText="取消"
+          >
+            <Button danger icon={<DeleteOutlined />} size="small" type="text" />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <Text type="secondary" style={{ marginBottom: 16, display: 'block' }}>
+        共 {tasks.length} 个任务已完成
+      </Text>
+      <Table
+        columns={columns}
+        dataSource={tasks}
+        loading={loading}
+        pagination={false}
+        rowKey="id"
+        locale={{ emptyText: '暂无已完成的任务' }}
+      />
+    </div>
+  );
+}
+
 // 主组件
 interface ContentWriterProps {
   defaultStatus?: string;
@@ -632,7 +874,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   const [filterPromptType, setFilterPromptType] = useState<string | undefined>(undefined);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
 
-  // 分类任务
+  // 分类任务（仅针对未生成页面）
   const manualTasks = useMemo(() => {
     return tasks.filter(task => {
       // 只显示人工模式的任务
@@ -649,6 +891,36 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     return tasks.filter(task => {
       // 只显示AI模式的任务
       if (task.generation_mode !== 'ai') return false;
+      // 日期筛选
+      if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
+      if (filterCity && task.city !== filterCity) return false;
+      if (filterPromptType && task.prompt_type !== filterPromptType) return false;
+      return true;
+    });
+  }, [tasks, filterCity, filterPromptType, selectedDate]);
+
+  // 待发布任务（所有有 ready 状态文章的任务）
+  const readyTasks = useMemo(() => {
+    return tasks.filter(task => {
+      // 至少有一篇文章状态为 ready 或 published
+      const hasReadyArticle = task.articles.some(a => a.status === 'ready' || a.status === 'published');
+      if (!hasReadyArticle) return false;
+      // 没有全部完成（否则应该在已完成里）
+      const allPublished = task.articles.every(a => a.status === 'published');
+      if (allPublished) return false;
+      // 日期筛选
+      if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
+      if (filterCity && task.city !== filterCity) return false;
+      if (filterPromptType && task.prompt_type !== filterPromptType) return false;
+      return true;
+    });
+  }, [tasks, filterCity, filterPromptType, selectedDate]);
+
+  // 已完成任务（所有文章都已发布的任务）
+  const completedTasks = useMemo(() => {
+    return tasks.filter(task => {
+      // 所有文章都已发布
+      if (task.articles.length === 0 || !task.articles.every(a => a.status === 'published')) return false;
       // 日期筛选
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
       if (filterCity && task.city !== filterCity) return false;
@@ -868,133 +1140,214 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         />
       </div>
 
-      {/* 日期选择和统计 */}
-      <Card 
-        style={{ 
-          marginBottom: 24,
-          background: '#e6f7ff',
-          border: '1px solid #91d5ff',
-        }}
-      >
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Space align="center" size="middle">
-            <CalendarOutlined style={{ color: '#1890ff', fontSize: 18 }} />
-            <DatePicker
-              value={selectedDate}
-              onChange={(date) => date && setSelectedDate(date)}
-              format="YYYY-MM-DD"
-              style={{ width: 140 }}
-            />
-            <Text style={{ fontSize: 16 }}>
-              人工区 <Text style={{ fontWeight: 'bold', color: '#1890ff' }}>{manualTasks.length}</Text> 个任务，
-              AI区 <Text style={{ fontWeight: 'bold', color: '#722ed1' }}>{aiTasks.length}</Text> 个任务
-            </Text>
-          </Space>
-        </Space>
-      </Card>
-
-      {/* 筛选 */}
-      <Card 
-        style={{ 
-          borderRadius: 20, 
-          border: 'none',
-          background: '#fff',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
-          marginBottom: 24,
-        }}
-        bodyStyle={{ padding: '20px 24px' }}
-      >
-        <Row gutter={16} align="middle">
-          <Col flex="auto">
-            <Space wrap>
-              <Select
-                placeholder="选择城市"
-                value={filterCity}
-                onChange={setFilterCity}
-                allowClear
-                style={{ width: 140, borderRadius: 12 }}
-                bordered={false}
-                options={CITIES.map(city => ({ label: city, value: city }))}
-              />
-              <Select
-                placeholder="选择提示词类型"
-                value={filterPromptType}
-                onChange={setFilterPromptType}
-                allowClear
-                style={{ width: 160, borderRadius: 12 }}
-                bordered={false}
-                options={promptTypes.map(pt => ({ label: pt.type, value: pt.id }))}
-              />
-              {(filterCity || filterPromptType) && (
-                <Button
-                  type="link"
-                  onClick={() => {
-                    setFilterCity(undefined);
-                    setFilterPromptType(undefined);
-                  }}
-                >
-                  清除筛选
-                </Button>
-              )}
+      {/* 根据页面类型显示不同内容 */}
+      {defaultStatus === 'draft' ? (
+        <>
+          {/* 日期选择和统计（仅未生成页面显示人工/AI统计） */}
+          <Card 
+            style={{ 
+              marginBottom: 24,
+              background: '#e6f7ff',
+              border: '1px solid #91d5ff',
+            }}
+          >
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Space align="center" size="middle">
+                <CalendarOutlined style={{ color: '#1890ff', fontSize: 18 }} />
+                <DatePicker
+                  value={selectedDate}
+                  onChange={(date) => date && setSelectedDate(date)}
+                  format="YYYY-MM-DD"
+                  style={{ width: 140 }}
+                />
+                <Text style={{ fontSize: 16 }}>
+                  人工区 <Text style={{ fontWeight: 'bold', color: '#1890ff' }}>{manualTasks.length}</Text> 个任务，
+                  AI区 <Text style={{ fontWeight: 'bold', color: '#722ed1' }}>{aiTasks.length}</Text> 个任务
+                </Text>
+              </Space>
             </Space>
-          </Col>
-        </Row>
-      </Card>
+          </Card>
 
-      {/* 人工/AI Tab 切换 */}
-      <Card style={{ borderRadius: 20 }}>
-        <Tabs
-          activeKey={activeTab}
-          onChange={setActiveTab}
-          type="card"
-          items={[
-            {
-              key: 'manual',
-              label: (
-                <span>
-                  <UserOutlined /> 人工生成
-                  {manualTasks.length > 0 && ` (${manualTasks.length})`}
-                </span>
-              ),
-              children: (
-                <ManualGenerateSection
-                  tasks={manualTasks}
-                  loading={loading}
-                  selectedRowKeys={selectedRowKeys}
-                  setSelectedRowKeys={setSelectedRowKeys}
-                  onSwitchToAi={handleSwitchToAi}
-                  onEditTask={setSelectedTask}
-                  onDeleteTask={handleDeleteTask}
-                  refreshTasks={refreshTasks}
-                  websites={websites}
-                  prompts={prompts}
+          {/* 筛选 */}
+          <Card 
+            style={{ 
+              borderRadius: 20, 
+              border: 'none',
+              background: '#fff',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
+              marginBottom: 24,
+            }}
+            bodyStyle={{ padding: '20px 24px' }}
+          >
+            <Row gutter={16} align="middle">
+              <Col flex="auto">
+                <Space wrap>
+                  <Select
+                    placeholder="选择城市"
+                    value={filterCity}
+                    onChange={setFilterCity}
+                    allowClear
+                    style={{ width: 140, borderRadius: 12 }}
+                    bordered={false}
+                    options={CITIES.map(city => ({ label: city, value: city }))}
+                  />
+                  <Select
+                    placeholder="选择提示词类型"
+                    value={filterPromptType}
+                    onChange={setFilterPromptType}
+                    allowClear
+                    style={{ width: 160, borderRadius: 12 }}
+                    bordered={false}
+                    options={promptTypes.map(pt => ({ label: pt.type, value: pt.id }))}
+                  />
+                  {(filterCity || filterPromptType) && (
+                    <Button
+                      type="link"
+                      onClick={() => {
+                        setFilterCity(undefined);
+                        setFilterPromptType(undefined);
+                      }}
+                    >
+                      清除筛选
+                    </Button>
+                  )}
+                </Space>
+              </Col>
+            </Row>
+          </Card>
+
+          {/* 人工/AI Tab 切换（仅未生成页面） */}
+          <Card style={{ borderRadius: 20 }}>
+            <Tabs
+              activeKey={activeTab}
+              onChange={setActiveTab}
+              type="card"
+              items={[
+                {
+                  key: 'manual',
+                  label: (
+                    <span>
+                      <UserOutlined /> 人工生成
+                      {manualTasks.length > 0 && ` (${manualTasks.length})`}
+                    </span>
+                  ),
+                  children: (
+                    <ManualGenerateSection
+                      tasks={manualTasks}
+                      loading={loading}
+                      selectedRowKeys={selectedRowKeys}
+                      setSelectedRowKeys={setSelectedRowKeys}
+                      onSwitchToAi={handleSwitchToAi}
+                      onEditTask={setSelectedTask}
+                      onDeleteTask={handleDeleteTask}
+                      refreshTasks={refreshTasks}
+                      websites={websites}
+                      prompts={prompts}
+                    />
+                  ),
+                },
+                {
+                  key: 'ai',
+                  label: (
+                    <span>
+                      <RobotOutlined /> AI 生成
+                      {aiTasks.length > 0 && ` (${aiTasks.length})`}
+                    </span>
+                  ),
+                  children: (
+                    <AiGenerateSection
+                      tasks={aiTasks}
+                      loading={loading}
+                      onRetry={handleRetry}
+                      onSwitchToManual={handleSwitchToManual}
+                      onEditTask={setSelectedTask}
+                      refreshTasks={refreshTasks}
+                      websites={websites}
+                      prompts={prompts}
+                    />
+                  ),
+                },
+              ]}
+            />
+          </Card>
+        </>
+      ) : defaultStatus === 'ready' ? (
+        <>
+          {/* 待发布页面统计 */}
+          <Card 
+            style={{ 
+              marginBottom: 24,
+              background: '#e6f7ff',
+              border: '1px solid #91d5ff',
+            }}
+          >
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Space align="center" size="middle">
+                <CalendarOutlined style={{ color: '#1890ff', fontSize: 18 }} />
+                <DatePicker
+                  value={selectedDate}
+                  onChange={(date) => date && setSelectedDate(date)}
+                  format="YYYY-MM-DD"
+                  style={{ width: 140 }}
                 />
-              ),
-            },
-            {
-              key: 'ai',
-              label: (
-                <span>
-                  <RobotOutlined /> AI 生成
-                  {aiTasks.length > 0 && ` (${aiTasks.length})`}
-                </span>
-              ),
-              children: (
-                <AiGenerateSection
-                  tasks={aiTasks}
-                  loading={loading}
-                  onRetry={handleRetry}
-                  onSwitchToManual={handleSwitchToManual}
-                  onEditTask={setSelectedTask}
-                  refreshTasks={refreshTasks}
-                  websites={websites}
-                  prompts={prompts}
+                <Text style={{ fontSize: 16 }}>
+                  待发布任务 <Text style={{ fontWeight: 'bold', color: '#1890ff' }}>{readyTasks.length}</Text> 个
+                </Text>
+              </Space>
+            </Space>
+          </Card>
+
+          {/* 待发布任务列表 */}
+          <Card style={{ borderRadius: 20 }}>
+            <ReadyPublishSection
+              tasks={readyTasks}
+              loading={loading}
+              onEditTask={setSelectedTask}
+              onDeleteTask={handleDeleteTask}
+              websites={websites}
+              prompts={prompts}
+            />
+          </Card>
+        </>
+      ) : (
+        <>
+          {/* 已完成页面统计 */}
+          <Card 
+            style={{ 
+              marginBottom: 24,
+              background: '#e6f7ff',
+              border: '1px solid #91d5ff',
+            }}
+          >
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Space align="center" size="middle">
+                <CalendarOutlined style={{ color: '#1890ff', fontSize: 18 }} />
+                <DatePicker
+                  value={selectedDate}
+                  onChange={(date) => date && setSelectedDate(date)}
+                  format="YYYY-MM-DD"
+                  style={{ width: 140 }}
                 />
-              ),
-            },
-          ]}
-        />
-      </Card>
+                <Text style={{ fontSize: 16 }}>
+                  已完成任务 <Text style={{ fontWeight: 'bold', color: '#52c41a' }}>{completedTasks.length}</Text> 个
+                </Text>
+              </Space>
+            </Space>
+          </Card>
+
+          {/* 已完成任务列表 */}
+          <Card style={{ borderRadius: 20 }}>
+            <CompletedSection
+              tasks={completedTasks}
+              loading={loading}
+              onEditTask={setSelectedTask}
+              onDeleteTask={handleDeleteTask}
+              websites={websites}
+              prompts={prompts}
+            />
+          </Card>
+        </>
+      )}
 
       {/* 文章编辑器弹窗 */}
       {selectedTask && (
