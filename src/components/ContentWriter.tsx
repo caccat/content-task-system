@@ -1049,11 +1049,11 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                 <div style={{ flex: 1 }}>标题</div>
               </div>
               {/* 表格行 */}
-              {tasksToGenerate.map((task) => (
+              {tasksToGenerate.map((task, idx) => (
                 <div key={task.id} style={{ 
                   display: 'flex', 
                   padding: '8px 12px', 
-                  borderBottom: index < tasksToGenerate.length - 1 ? '1px solid #f0f0f0' : 'none',
+                  borderBottom: idx < tasksToGenerate.length - 1 ? '1px solid #f0f0f0' : 'none',
                   alignItems: 'center'
                 }}>
                   <div style={{ width: 120, fontWeight: 500, color: '#1890ff' }}>
