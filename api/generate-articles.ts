@@ -4,14 +4,15 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = 'deepseek-chat';
 
-// 生成单篇文章
-async function generateArticle(city: string, promptContent: string, writingSuggestions: string, apiKey: string): Promise<string> {
+// 生成单篇文章（新增 title 参数）
+async function generateArticle(city: string, promptContent: string, writingSuggestions: string, apiKey: string, title?: string): Promise<string> {
   if (!promptContent || promptContent.trim() === '') {
     throw new Error('提示词内容为空，请先在文章提示词管理中填写提示词内容');
   }
 
-  // 替换占位符
+  // 替换占位符（title 用户输入的标题优先于其他默认值）
   let prompt = promptContent
+    .replace(/\{\{title\}\}/g, title || '')
     .replace(/\{\{city\}\}/g, city)
     .replace(/\{\{suggestions\}\}/g, writingSuggestions || '请根据城市特点创作一篇优质内容');
 
@@ -132,12 +133,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           continue;
         }
 
-        // 生成文章
+        // 生成文章（传递用户输入的标题）
         const content = await generateArticle(
           task.city,
           promptContent,
           task.writing_suggestions,
-          apiKey
+          apiKey,
+          task.title // 用户输入的标题
         );
         
         results.push({
