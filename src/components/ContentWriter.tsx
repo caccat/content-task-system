@@ -564,7 +564,7 @@ function AiGenerateSection({
                 {generatingTasks.length === 0 ? (
                   <Empty description="暂无正在生成的任务" />
                 ) : (
-                  generatingTasks.map(task => renderTaskCard(task, false))
+                  generatingTasks.map(task => renderTaskCard(task))
                 )}
               </div>
             ),
