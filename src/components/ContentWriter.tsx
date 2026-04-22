@@ -583,24 +583,19 @@ function AiGenerateSection({
               </>
             )}
             {task.ai_status === 'generating' && (
-              <>
-                <Button size="small" disabled icon={<LoadingOutlined />}>
-                  生成中...
+              <Popconfirm
+                title="取消生成"
+                description="确定要取消正在进行的 AI 生成吗？"
+                onConfirm={() => {
+                  onCancelGeneration(task.id);
+                }}
+                okText="确定"
+                cancelText="取消"
+              >
+                <Button danger size="small" icon={<CloseCircleOutlined />}>
+                  取消
                 </Button>
-                <Popconfirm
-                  title="取消生成"
-                  description="确定要取消正在进行的 AI 生成吗？"
-                  onConfirm={() => {
-                    onCancelGeneration(task.id);
-                  }}
-                  okText="确定"
-                  cancelText="取消"
-                >
-                  <Button danger size="small" icon={<CloseCircleOutlined />}>
-                    取消
-                  </Button>
-                </Popconfirm>
-              </>
+              </Popconfirm>
             )}
             {task.ai_status === 'completed' && (
               <>
