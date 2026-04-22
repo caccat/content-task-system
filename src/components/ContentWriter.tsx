@@ -644,7 +644,13 @@ function AiGenerateSection({
 
   // 分类任务
   const generatingTasks = tasks.filter(t => t.ai_status === 'pending' || t.ai_status === 'generating');
-  const completedTasks = tasks.filter(t => t.ai_status === 'completed');
+  const completedTasks = tasks.filter(t => {
+    // 只显示 AI 状态为 completed 的任务
+    if (t.ai_status !== 'completed') return false;
+    // 排除所有文章都是 ready/published 的任务（这些应该去待发布列表）
+    if (t.articles.length > 0 && t.articles.every(a => a.status === 'ready' || a.status === 'published')) return false;
+    return true;
+  });
   const failedTasks = tasks.filter(t => t.ai_status === 'failed');
 
   const getWebsiteLabels = (websiteIds: string[]) => {
@@ -1118,6 +1124,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     return tasks.filter(task => {
       // 只显示人工模式的任务
       if (task.generation_mode !== 'manual') return false;
+      // 排除已准备发布的任务（有 ready 状态的文章）
+      if (task.articles.some(a => a.status === 'ready' || a.status === 'published')) return false;
       // 日期筛选
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
       if (filterCity && task.city !== filterCity) return false;
