@@ -56,6 +56,10 @@ export interface Task {
   deadline: string;
   status: 'pending' | 'in_progress' | 'completed';
   created_by: string;
+  // 新增：生成模式
+  generation_mode: 'manual' | 'ai';
+  // 新增：AI生成状态
+  ai_status: 'pending' | 'generating' | 'completed' | 'failed' | null;
 }
 
 export const CITIES = [

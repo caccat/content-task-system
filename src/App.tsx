@@ -33,7 +33,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
 // 子页面类型
 type CreatorSubPage = 'create' | 'created' | 'websites';
-type WriterSubPage = 'tasks' | 'prompts' | 'draft' | 'ready' | 'completed';
+type WriterSubPage = 'prompts' | 'draft' | 'ready' | 'completed';
 type PublisherSubPage = 'tasks' | 'ready' | 'completed';
 type SettingsSubPage = 'general' | 'notifications';
 
@@ -50,7 +50,9 @@ CREATE TABLE tasks (
   writing_suggestions TEXT,
   deadline DATE NOT NULL,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed')),
-  created_by TEXT DEFAULT 'system'
+  created_by TEXT DEFAULT 'system',
+  generation_mode TEXT DEFAULT 'manual' CHECK (generation_mode IN ('manual', 'ai')),
+  ai_status TEXT CHECK (ai_status IN ('pending', 'generating', 'completed', 'failed'))
 );
 
 -- 创建文章表
@@ -68,10 +70,16 @@ CREATE TABLE articles (
 -- 创建索引
 CREATE INDEX idx_articles_task_id ON articles(task_id);
 CREATE INDEX idx_tasks_status ON tasks(status);
+CREATE INDEX idx_tasks_generation_mode ON tasks(generation_mode);
+CREATE INDEX idx_tasks_ai_status ON tasks(ai_status);
 
 -- 启用Realtime
 ALTER PUBLICATION supabase_realtime ADD TABLE tasks;
-ALTER PUBLICATION supabase_realtime ADD TABLE articles;`;
+ALTER PUBLICATION supabase_realtime ADD TABLE articles;
+
+-- 如果表已存在，添加新字段
+-- ALTER TABLE tasks ADD COLUMN generation_mode TEXT DEFAULT 'manual' CHECK (generation_mode IN ('manual', 'ai'));
+-- ALTER TABLE tasks ADD COLUMN ai_status TEXT CHECK (ai_status IN ('pending', 'generating', 'completed', 'failed'));`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(sqlScript);
@@ -117,7 +125,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE articles;`;
 function App() {
   const [currentRole, setCurrentRole] = useState<UserRole | 'settings'>('creator');
   const [creatorSubPage, setCreatorSubPage] = useState<CreatorSubPage>('create');
-  const [writerSubPage, setWriterSubPage] = useState<WriterSubPage>('tasks');
+  const [writerSubPage, setWriterSubPage] = useState<WriterSubPage>('draft');
   const [publisherSubPage, setPublisherSubPage] = useState<PublisherSubPage>('tasks');
   const [openKeys, setOpenKeys] = useState<string[]>(['creator', 'writer', 'publisher']);
 
@@ -196,44 +204,40 @@ function App() {
       label: '内容生成者',
       children: [
         {
-          key: 'writer-tasks',
+          key: 'writer-draft',
           icon: <UnorderedListOutlined />,
-          label: '任务列表',
-          children: [
-            {
-              key: 'writer-draft',
-              label: (
-                <span>
-                  未生成
-                  {taskStats.draft > 0 && (
-                    <Badge count={taskStats.draft} style={{ marginLeft: 8, backgroundColor: '#ff4d4f' }} />
-                  )}
-                </span>
-              ),
-            },
-            {
-              key: 'writer-ready',
-              label: (
-                <span>
-                  待发布
-                  {taskStats.ready > 0 && (
-                    <Badge count={taskStats.ready} style={{ marginLeft: 8, backgroundColor: '#1890ff' }} />
-                  )}
-                </span>
-              ),
-            },
-            {
-              key: 'writer-completed',
-              label: (
-                <span>
-                  已完成
-                  {taskStats.completed > 0 && (
-                    <Badge count={taskStats.completed} style={{ marginLeft: 8, backgroundColor: '#52c41a' }} />
-                  )}
-                </span>
-              ),
-            },
-          ],
+          label: (
+            <span>
+              未生成
+              {taskStats.draft > 0 && (
+                <Badge count={taskStats.draft} style={{ marginLeft: 8, backgroundColor: '#ff4d4f' }} />
+              )}
+            </span>
+          ),
+        },
+        {
+          key: 'writer-ready',
+          icon: <ClockCircleOutlined />,
+          label: (
+            <span>
+              待发布
+              {taskStats.ready > 0 && (
+                <Badge count={taskStats.ready} style={{ marginLeft: 8, backgroundColor: '#1890ff' }} />
+              )}
+            </span>
+          ),
+        },
+        {
+          key: 'writer-completed',
+          icon: <CheckCircleOutlined />,
+          label: (
+            <span>
+              已完成
+              {taskStats.completed > 0 && (
+                <Badge count={taskStats.completed} style={{ marginLeft: 8, backgroundColor: '#52c41a' }} />
+              )}
+            </span>
+          ),
         },
         {
           key: 'writer-prompts',
@@ -304,8 +308,6 @@ function App() {
         }
       case 'writer':
         switch (writerSubPage) {
-          case 'tasks':
-            return <ContentWriter onOpenSettings={() => setCurrentRole('settings')} />;
           case 'draft':
             return <ContentWriter defaultStatus="draft" onOpenSettings={() => setCurrentRole('settings')} />;
           case 'ready':
@@ -315,7 +317,7 @@ function App() {
           case 'prompts':
             return <PromptManager />;
           default:
-            return <ContentWriter onOpenSettings={() => setCurrentRole('settings')} />;
+            return <ContentWriter defaultStatus="draft" onOpenSettings={() => setCurrentRole('settings')} />;
         }
       case 'publisher':
         switch (publisherSubPage) {
@@ -458,10 +460,8 @@ function App() {
               if (!openKeys.includes('writer')) {
                 setOpenKeys(prev => [...prev, 'writer']);
               }
-              if (key === 'writer-draft' || key === 'writer-ready' || key === 'writer-completed') {
-                if (!openKeys.includes('writer-tasks')) {
-                  setOpenKeys(prev => [...prev, 'writer-tasks']);
-                }
+              if (key === 'writer-draft' || key === 'writer-ready' || key === 'writer-completed' || key === 'writer-prompts') {
+                // 保持 writer 菜单展开
               }
             } else if (key.startsWith('publisher-')) {
               setCurrentRole('publisher');
@@ -480,7 +480,7 @@ function App() {
               setOpenKeys(['creator']);
             } else if (key === 'writer') {
               setCurrentRole('writer');
-              setWriterSubPage('tasks');
+              setWriterSubPage('draft');
               setOpenKeys(['writer']);
             } else if (key === 'publisher') {
               setCurrentRole('publisher');

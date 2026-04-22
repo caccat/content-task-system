@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
-import { Card, List, Badge, Tag, Button, Modal, Input, message, Typography, Space, Progress, Popconfirm, Select, Row, Col, DatePicker, Radio, Table, Checkbox, Spin, Alert, Empty } from 'antd';
-import { EditOutlined, FileTextOutlined, DeleteOutlined, ExclamationCircleOutlined, EyeOutlined, CheckCircleOutlined, UndoOutlined, FilterOutlined, CalendarOutlined, SettingOutlined, RobotOutlined } from '@ant-design/icons';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { Card, List, Badge, Tag, Button, Modal, Input, message, Typography, Space, Progress, Popconfirm, Select, Row, Col, DatePicker, Table, Checkbox, Spin, Alert, Empty, Tabs, Radio, Tooltip } from 'antd';
+import { EditOutlined, FileTextOutlined, DeleteOutlined, ExclamationCircleOutlined, CheckCircleOutlined, UndoOutlined, CalendarOutlined, RobotOutlined, UserOutlined, LoadingOutlined, SyncOutlined, StopOutlined } from '@ant-design/icons';
 import { useTasks, useArticles } from '../hooks/useSupabase';
 import { useSettings } from '../hooks/useSettings';
 import { usePrompts } from '../hooks/usePrompts';
@@ -11,7 +11,10 @@ import { CITIES } from '../types';
 import dayjs from 'dayjs';
 import RichTextEditor from './RichTextEditor';
 
-// 发送飞书通知（单条）
+const { Text, Title } = Typography;
+const { TabPane } = Tabs;
+
+// 发送飞书通知
 const sendFeishuNotification = async (webhook: string, task: TaskWithArticles, article: Article) => {
   try {
     const response = await fetch(webhook, {
@@ -33,98 +36,32 @@ const sendFeishuNotification = async (webhook: string, task: TaskWithArticles, a
   }
 };
 
-// 发送批量飞书通知
-const sendBatchFeishuNotification = async (webhook: string, tasks: TaskWithArticles[]) => {
-  try {
-    const today = dayjs().format('YYYY-MM-DD');
-    const totalArticles = tasks.reduce((sum, t) => sum + (t.articles?.length || 0), 0);
-    const readyArticles = tasks.reduce((sum, t) => sum + (t.articles?.filter(a => a.status === 'ready').length || 0), 0);
-    
-    const response = await fetch(webhook, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        msg_type: 'text',
-        content: {
-          text: `📢 今日内容生产完成\n\n日期：${today}\n任务数：${tasks.length} 个\n文章总数：${totalArticles} 篇\n待发布：${readyArticles} 篇\n\n所有文章已生产完成，请安排发布。`
-        }
-      })
-    });
-    
-    if (!response.ok) {
-      console.error('批量飞书通知发送失败:', await response.text());
-    }
-  } catch (error) {
-    console.error('发送批量飞书通知出错:', error);
+// 状态标签组件
+const StatusTag = ({ status, aiStatus }: { status: string; aiStatus?: string | null }) => {
+  if (aiStatus === 'pending') {
+    return <Tag icon={<LoadingOutlined />} color="default">排队中</Tag>;
+  }
+  if (aiStatus === 'generating') {
+    return <Tag icon={<SyncOutlined spin />} color="processing">生成中</Tag>;
+  }
+  if (aiStatus === 'failed') {
+    return <Tag color="error">生成失败</Tag>;
+  }
+  if (aiStatus === 'completed') {
+    return <Tag icon={<RobotOutlined />} color="success">🤖 AI草稿</Tag>;
+  }
+  
+  switch (status) {
+    case 'published':
+      return <Tag color="success">已发布</Tag>;
+    case 'ready':
+      return <Tag color="processing">准备发布</Tag>;
+    default:
+      return <Tag color="default">草稿</Tag>;
   }
 };
 
-// 检查是否需要发送批量通知
-const checkAndSendBatchNotification = async (allTasks: TaskWithArticles[], currentTaskId: string, settings: Record<string, string>) => {
-  const notifyMode = settings['feishu_notify_mode'] || 'immediate';
-  if (notifyMode !== 'batch') return;
-
-  const feishuWebhook = settings['feishu_webhook'];
-  if (!feishuWebhook) return;
-
-  // 检查今天是否已发送过批量通知
-  const today = dayjs().format('YYYY-MM-DD');
-  const lastBatchNotify = settings['feishu_batch_notify_date'];
-  if (lastBatchNotify === today) return;
-
-  // 获取今天的所有任务
-  const todayTasks = allTasks.filter(t => dayjs(t.deadline).format('YYYY-MM-DD') === today);
-  if (todayTasks.length === 0) return;
-
-  // 检查每个任务的文章是否都已完成（文章数量等于任务要求的数量，且所有文章都是 ready 或 published）
-  const allCompleted = todayTasks.every(task => {
-    const articles = task.articles || [];
-    const readyOrPublishedCount = articles.filter(a => a.status === 'ready' || a.status === 'published').length;
-    return readyOrPublishedCount === task.quantity;
-  });
-
-  if (allCompleted) {
-    await sendBatchFeishuNotification(feishuWebhook, todayTasks);
-    message.success('批量通知已发送');
-  }
-};
-
-const { Text, Title } = Typography;
-
-// 从 Supabase 读取提示词类型
-const usePromptTypes = () => {
-  const { prompts } = usePrompts();
-  return prompts.map(p => ({ id: p.id, type: p.type }));
-};
-
-// 批量生成任务的接口
-interface BatchTask {
-  task: TaskWithArticles;
-  title: string;
-}
-
-// 调用 Vercel Edge Function 生成文章（API Key 由 Edge Function 使用环境变量）
-const generateArticles = async (tasks: BatchTask[]): Promise<any> => {
-  const generateTasks = tasks.map(t => ({
-    city: t.task.city,
-    prompt_type: t.task.prompt_type,
-    writing_suggestions: t.task.writing_suggestions || '',
-    title: t.title,
-  }));
-
-  const response = await fetch('/api/generate-articles', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tasks: generateTasks }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`请求失败: ${response.status}`);
-  }
-
-  return response.json();
-};
-
+// 文章编辑器组件
 function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArticles; visible: boolean; onClose: () => void; settings: Record<string, string> }) {
   const { articles, updateArticle, loading } = useArticles(task.id);
   const [editingArticle, setEditingArticle] = useState<Article | null>(null);
@@ -138,13 +75,9 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   const handleSave = async () => {
     if (!editingArticle) return;
     try {
-      // 保存内容，但保持当前状态不变
-      const newStatus = editingArticle.status === 'published' ? 'published' : 
-                        editingArticle.status === 'ready' ? 'ready' :
-                        'draft';
       await updateArticle(editingArticle.id, {
         content,
-        status: newStatus,
+        status: editingArticle.status,
       });
       message.success('文章已保存');
       setEditingArticle(null);
@@ -153,28 +86,22 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
     }
   };
 
-  // 标记为准备发布（ready 状态）
   const handleMarkReady = async (article: Article, settings: Record<string, string>) => {
     try {
       await updateArticle(article.id, { status: 'ready' });
       message.success('已标记为准备发布');
 
-      // 获取通知模式设置
       const notifyMode = settings['feishu_notify_mode'] || 'immediate';
       const feishuWebhook = settings['feishu_webhook'];
 
-      if (feishuWebhook) {
-        if (notifyMode === 'immediate') {
-          // 即时通知：立即发送
-          await sendFeishuNotification(feishuWebhook, task, article);
-        }
+      if (feishuWebhook && notifyMode === 'immediate') {
+        await sendFeishuNotification(feishuWebhook, task, article);
       }
     } catch {
       message.error('操作失败');
     }
   };
 
-  // 取消准备发布（恢复为 draft）
   const handleCancelReady = async (article: Article) => {
     try {
       await updateArticle(article.id, { status: 'draft' });
@@ -184,38 +111,19 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
     }
   };
 
-  // 获取状态标签
-  const getStatusTag = (status: string) => {
-    switch (status) {
-      case 'published':
-        return <Tag color="success">已发布</Tag>;
-      case 'ready':
-        return <Tag color="processing">准备发布</Tag>;
-      default:
-        return <Tag color="default">草稿</Tag>;
-    }
-  };
-
-  // 使用 hooks 获取数据
   const { websites, loading: websitesLoading } = useWebsites();
   const { prompts, loading: promptsLoading } = usePrompts();
 
-  // 获取网站名称
   const getWebsiteLabels = (websiteIds: string[]) => {
-    if (websitesLoading || websites.length === 0) {
-      return ['加载中...'];
-    }
+    if (websitesLoading || websites.length === 0) return ['加载中...'];
     return websiteIds.map(w => {
       const site = websites.find((s: any) => s.id === w);
       return site ? `${site.name} (${site.platform})` : w;
     });
   };
 
-  // 获取提示词类型名称
   const getPromptTypeLabel = (promptTypeId: string) => {
-    if (promptsLoading || prompts.length === 0) {
-      return '加载中...';
-    }
+    if (promptsLoading || prompts.length === 0) return '加载中...';
     const prompt = prompts.find((p: any) => p.id === promptTypeId);
     return prompt ? prompt.type : promptTypeId;
   };
@@ -233,6 +141,7 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
           <div>
             <Text strong>发布城市：</Text>
             <Tag color="blue">{task.city}</Tag>
+            {task.generation_mode === 'ai' && <Tag icon={<RobotOutlined />} color="purple">AI模式</Tag>}
           </div>
           <div>
             <Text strong>发布网站：</Text>
@@ -271,7 +180,6 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
         renderItem={(article, index) => (
           <List.Item
             actions={[
-              // 准备发布/取消按钮
               article.status === 'ready' ? (
                 <Popconfirm
                   key="cancel"
@@ -281,12 +189,7 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
                   okText="确定"
                   cancelText="取消"
                 >
-                  <Button
-                    icon={<UndoOutlined />}
-                    size="small"
-                  >
-                    取消发布
-                  </Button>
+                  <Button icon={<UndoOutlined />} size="small">取消发布</Button>
                 </Popconfirm>
               ) : article.status !== 'published' ? (
                 <Button
@@ -317,7 +220,7 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
               title={`文章 ${index + 1}`}
               description={
                 <Space>
-                  {getStatusTag(article.status)}
+                  <StatusTag status={article.status} />
                   {article.content && (
                     <Text type="secondary" ellipsis style={{ maxWidth: 300 }}>
                       {article.content.substring(0, 50)}...
@@ -350,138 +253,48 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   );
 }
 
-interface ContentWriterProps {
-  defaultStatus?: string;
-  onOpenSettings?: () => void;
-}
-
-export default function ContentWriter({ defaultStatus, onOpenSettings }: ContentWriterProps) {
-  const { tasks, loading, error, deleteTask, refreshTasks } = useTasks();
-  const [selectedTask, setSelectedTask] = useState<TaskWithArticles | null>(null);
-  const promptTypes = usePromptTypes();
-  const { settings, setSetting } = useSettings();
-  const { websites } = useWebsites();
-  const { prompts } = usePrompts();
-
-  // 获取网站名称
+// 人工生成区组件
+function ManualGenerateSection({
+  tasks,
+  loading,
+  selectedRowKeys,
+  setSelectedRowKeys,
+  onSwitchToAi,
+  onEditTask,
+  onDeleteTask,
+  refreshTasks,
+  websites,
+  prompts,
+}: {
+  tasks: TaskWithArticles[];
+  loading: boolean;
+  selectedRowKeys: React.Key[];
+  setSelectedRowKeys: (keys: React.Key[]) => void;
+  onSwitchToAi: (taskIds: string[]) => void;
+  onEditTask: (task: TaskWithArticles) => void;
+  onDeleteTask: (task: TaskWithArticles, e: React.MouseEvent) => void;
+  refreshTasks: () => void;
+  websites: any[];
+  prompts: any[];
+}) {
   const getWebsiteLabels = (websiteIds: string[]) => {
-    if (websites.length === 0) {
-      return [];
-    }
+    if (websites.length === 0) return [];
     return websiteIds.map(w => {
       const site = websites.find((s: any) => s.id === w);
       return site ? `${site.name} (${site.platform})` : w;
     });
   };
 
-  // 获取提示词类型名称
   const getPromptTypeLabel = (promptTypeId: string) => {
-    if (prompts.length === 0) {
-      return promptTypeId;
-    }
     const prompt = prompts.find((p: any) => p.id === promptTypeId);
     return prompt ? prompt.type : promptTypeId;
   };
 
-  // 筛选状态
-  const [filterCity, setFilterCity] = useState<string | undefined>(undefined);
-  const [filterPromptType, setFilterPromptType] = useState<string | undefined>(undefined);
-  const [filterStatus, setFilterStatus] = useState<string | undefined>(defaultStatus);
-  const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
-
-  // 批量选择状态
-  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [batchModalVisible, setBatchModalVisible] = useState(false);
-  const [batchTitles, setBatchTitles] = useState<Record<string, string>>({});
-  const [generating, setGenerating] = useState(false);
-  const [generationProgress, setGenerationProgress] = useState(0);
-  
-  // 生成模式：人工生成 vs AI生成（仅在未生成状态时显示）
-  const [generateMode, setGenerateMode] = useState<'manual' | 'ai'>('manual');
-
-  // 当 defaultStatus 变化时更新 filterStatus
-  useEffect(() => {
-    setFilterStatus(defaultStatus);
-  }, [defaultStatus]);
-
-  // 检查批量通知 - 当任务数据变化时自动检查
-  useEffect(() => {
-    const checkBatch = async () => {
-      if (!loading && tasks.length > 0) {
-        await checkAndSendBatchNotification(tasks, '', settings);
-      }
-    };
-    checkBatch();
-  }, [tasks, loading]);
-
-  // 内容生产者视角：根据文章状态判断任务进度
-  const getTaskProgress = (task: TaskWithArticles) => {
-    const readyCount = task.articles.filter(a => a.status === 'ready').length;
-    const publishedCount = task.articles.filter(a => a.status === 'published').length;
-
-    if (publishedCount === task.quantity) {
-      return { color: 'success', text: '已完成', value: 'completed' };
-    }
-    if (readyCount > 0 || publishedCount > 0) {
-      return { color: 'processing', text: '待发布', value: 'ready' };
-    }
-    return { color: 'default', text: '未生成', value: 'draft' };
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (keys: React.Key[]) => setSelectedRowKeys(keys),
   };
 
-  // 按选择日期统计（按截止日期）
-  const dateStats = useMemo(() => {
-    const dateStr = selectedDate.format('YYYY-MM-DD');
-    const dateTasks = tasks.filter(task => dayjs(task.deadline).format('YYYY-MM-DD') === dateStr);
-
-    let totalArticles = 0;
-    let generatedArticles = 0;
-    let publishedArticles = 0;
-    let draftArticles = 0;
-
-    dateTasks.forEach(task => {
-      totalArticles += task.quantity;
-      task.articles.forEach(article => {
-        if (article.status === 'published') {
-          publishedArticles++;
-          generatedArticles++;
-        } else if (article.status === 'ready') {
-          generatedArticles++;
-        } else {
-          draftArticles++;
-        }
-      });
-    });
-
-    return {
-      totalTasks: dateTasks.length,
-      totalArticles,
-      generatedArticles,
-      publishedArticles,
-      draftArticles,
-    };
-  }, [tasks, selectedDate]);
-
-  // 筛选后的任务列表
-  const filteredTasks = useMemo(() => {
-    return tasks.filter(task => {
-      const progress = getTaskProgress(task);
-
-      // 按选择日期筛选（截止日期）
-      if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
-      if (filterCity && task.city !== filterCity) return false;
-      if (filterPromptType && task.prompt_type !== filterPromptType) return false;
-      if (filterStatus && progress.value !== filterStatus) return false;
-
-      return true;
-    });
-  }, [tasks, filterCity, filterPromptType, filterStatus, selectedDate]);
-
-  // 批量选择的任务
-  const selectedTasks = useMemo(() => {
-    return filteredTasks.filter(task => selectedRowKeys.includes(task.id));
-  }, [filteredTasks, selectedRowKeys]);
-
-  // 表格列定义
   const columns = [
     {
       title: '城市',
@@ -494,153 +307,395 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
       dataIndex: 'prompt_type',
       key: 'prompt_type',
       width: 120,
-      render: (promptTypeId: string) => {
-        const prompt = promptTypes.find(p => p.id === promptTypeId);
-        return prompt ? prompt.type : promptTypeId;
+      render: (promptTypeId: string) => getPromptTypeLabel(promptTypeId),
+    },
+    {
+      title: '发布网站',
+      dataIndex: 'websites',
+      key: 'websites',
+      width: 200,
+      render: (websites: string[]) => (
+        <Space wrap>
+          {getWebsiteLabels(websites).map((site, idx) => (
+            <Tag key={idx} color="green">{site}</Tag>
+          ))}
+        </Space>
+      ),
+    },
+    {
+      title: '文章数',
+      dataIndex: 'quantity',
+      key: 'quantity',
+      width: 80,
+    },
+    {
+      title: '截止日期',
+      dataIndex: 'deadline',
+      key: 'deadline',
+      width: 120,
+      render: (deadline: string) => dayjs(deadline).format('YYYY-MM-DD'),
+    },
+    {
+      title: '状态',
+      key: 'status',
+      width: 120,
+      render: (_: any, record: TaskWithArticles) => {
+        const hasContent = record.articles.some(a => a.content);
+        return hasContent ? <Tag color="processing">有内容</Tag> : <Tag color="default">空白</Tag>;
       },
     },
     {
-      title: '任务备注',
-      dataIndex: 'writing_suggestions',
-      key: 'writing_suggestions',
-      width: 200,
-      ellipsis: true,
-    },
-    {
-      title: '文章标题',
-      dataIndex: 'title',
-      key: 'title',
-      render: (_: any, record: { task: TaskWithArticles }) => (
-        <Input
-          placeholder="请输入文章标题"
-          value={batchTitles[record.task.id] || ''}
-          onChange={(e) => setBatchTitles(prev => ({
-            ...prev,
-            [record.task.id]: e.target.value,
-          }))}
-        />
+      title: '操作',
+      key: 'action',
+      width: 150,
+      render: (_: any, record: TaskWithArticles) => (
+        <Space>
+          <Button
+            type="primary"
+            icon={<EditOutlined />}
+            onClick={() => onEditTask(record)}
+            size="small"
+          >
+            人工编辑
+          </Button>
+          <Popconfirm
+            title="确认删除"
+            description="确定要删除此任务吗？"
+            onConfirm={() => onDeleteTask(record, { stopPropagation: () => {} } as any)}
+            okText="删除"
+            cancelText="取消"
+          >
+            <Button danger icon={<DeleteOutlined />} size="small" type="text" />
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
 
-  // 表格数据源 - 显示所有符合条件的任务
-  const tableData = filteredTasks.map(task => ({
-    key: task.id,
-    task,
-    city: task.city,
-    prompt_type: task.prompt_type,
-    writing_suggestions: task.writing_suggestions,
-  }));
-
-  // 打开批量生成弹窗
-  const handleOpenBatchModal = () => {
-    if (selectedRowKeys.length === 0) {
-      message.warning('请先选择要生成的任务');
-      return;
-    }
-    
-    // 初始化标题
-    const initialTitles: Record<string, string> = {};
-    selectedTasks.forEach(task => {
-      initialTitles[task.id] = `${task.city} - ${dayjs(task.deadline).format('MM月DD日')}文章`;
-    });
-    setBatchTitles(initialTitles);
-    setBatchModalVisible(true);
-  };
-
-  // 执行批量生成
-  const handleBatchGenerate = async () => {
-    // 检查是否所有任务都填写了标题
-    const missingTitles = selectedTasks.filter(task => !batchTitles[task.id]?.trim());
-    if (missingTitles.length > 0) {
-      message.error(`请为所有任务填写文章标题，还有 ${missingTitles.length} 个任务未填写`);
-      return;
-    }
-
-    setGenerating(true);
-    setGenerationProgress(0);
-
-    try {
-      const batchTasks: BatchTask[] = selectedTasks.map(task => ({
-        task,
-        title: batchTitles[task.id],
-      }));
-
-      // 调用 Edge Function 生成文章（API Key 由 Edge Function 使用环境变量）
-      const result = await generateArticles(batchTasks);
-
-      if (result.success) {
-        // 保存生成的文章到 Supabase
-        for (let i = 0; i < result.results.length; i++) {
-          const res = result.results[i];
-          if (res.success) {
-            const task = selectedTasks[i];
-            
-            // 查找对应的文章记录（如果存在）
-            const existingArticles = task.articles;
-            
-            if (existingArticles.length > 0) {
-              // 更新第一篇文章
-              await supabase
-                .from('articles')
-                .update({
-                  content: res.content,
-                  status: 'draft',
-                  updated_at: new Date().toISOString(),
-                })
-                .eq('id', existingArticles[0].id);
-            } else {
-              // 创建新文章
-              await supabase
-                .from('articles')
-                .insert({
-                  task_id: task.id,
-                  content: res.content,
-                  status: 'draft',
-                });
-            }
-          }
-        }
-
-        message.success(`成功生成 ${result.successCount} 篇文章`);
-        setBatchModalVisible(false);
-        setSelectedRowKeys([]);
-        refreshTasks();
-      } else {
-        // 显示详细错误信息
-        const failedDetails = result.results
-          .filter((r: any) => !r.success)
-          .map((r: any) => `任务 ${r.taskIndex}: ${r.error}`)
-          .join('\n');
-        message.error(`部分生成失败，成功 ${result.successCount} 篇，失败 ${result.failCount} 篇\n${failedDetails}`);
-      }
-    } catch (error) {
-      console.error('批量生成失败:', error);
-      message.error('生成失败，请检查网络和 API Key 配置');
-    } finally {
-      setGenerating(false);
-      setGenerationProgress(0);
-    }
-  };
-
-  // 行选择配置
-  const rowSelection = {
-    selectedRowKeys,
-    onChange: (keys: React.Key[]) => setSelectedRowKeys(keys),
-  };
-
-  if (error) {
-    return (
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
-        <Title level={3}>内容生成任务列表</Title>
-        <Card>
-          <Typography.Text type="danger">连接数据库失败，请检查 Supabase 配置</Typography.Text>
-        </Card>
+  return (
+    <div>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text type="secondary">
+          共 {tasks.length} 个任务{tasks.filter(t => t.articles.some(a => a.content)).length > 0 && `（其中 ${tasks.filter(t => t.articles.some(a => a.content)).length} 个已有内容）`}
+        </Text>
+        {selectedRowKeys.length > 0 && (
+          <Button
+            type="primary"
+            icon={<RobotOutlined />}
+            onClick={() => onSwitchToAi(selectedRowKeys as string[])}
+          >
+            🤖 转为 AI 生成 ({selectedRowKeys.length})
+          </Button>
+        )}
       </div>
-    );
-  }
 
-  const handleDelete = (task: TaskWithArticles, e: React.MouseEvent) => {
+      <Table
+        rowSelection={rowSelection}
+        columns={columns}
+        dataSource={tasks}
+        loading={loading}
+        pagination={false}
+        rowKey="id"
+        locale={{ emptyText: '暂无人工生成任务' }}
+      />
+    </div>
+  );
+}
+
+// AI 生成区组件
+function AiGenerateSection({
+  tasks,
+  loading,
+  onRetry,
+  onSwitchToManual,
+  onEditTask,
+  refreshTasks,
+  websites,
+  prompts,
+}: {
+  tasks: TaskWithArticles[];
+  loading: boolean;
+  onRetry: (taskId: string) => void;
+  onSwitchToManual: (taskIds: string[]) => void;
+  onEditTask: (task: TaskWithArticles) => void;
+  refreshTasks: () => void;
+  websites: any[];
+  prompts: any[];
+}) {
+  const [activeTab, setActiveTab] = useState('generating');
+
+  // 分类任务
+  const generatingTasks = tasks.filter(t => t.ai_status === 'pending' || t.ai_status === 'generating');
+  const completedTasks = tasks.filter(t => t.ai_status === 'completed');
+  const failedTasks = tasks.filter(t => t.ai_status === 'failed');
+
+  const getWebsiteLabels = (websiteIds: string[]) => {
+    if (websites.length === 0) return [];
+    return websiteIds.map(w => {
+      const site = websites.find((s: any) => s.id === w);
+      return site ? `${site.name} (${site.platform})` : w;
+    });
+  };
+
+  const getPromptTypeLabel = (promptTypeId: string) => {
+    const prompt = prompts.find((p: any) => p.id === promptTypeId);
+    return prompt ? prompt.type : promptTypeId;
+  };
+
+  const renderTaskCard = (task: TaskWithArticles, showActions: boolean = true) => (
+    <Card
+      key={task.id}
+      size="small"
+      style={{ marginBottom: 12 }}
+      extra={
+        showActions && (
+          <Space>
+            {task.ai_status === 'generating' && (
+              <Tooltip title="AI正在生成中，暂不可操作">
+                <Button size="small" disabled icon={<LoadingOutlined />}>
+                  生成中...
+                </Button>
+              </Tooltip>
+            )}
+            {task.ai_status === 'completed' && (
+              <>
+                <Button
+                  type="primary"
+                  icon={<EditOutlined />}
+                  onClick={() => onEditTask(task)}
+                  size="small"
+                >
+                  修改草稿
+                </Button>
+                <Button
+                  icon={<SyncOutlined />}
+                  onClick={() => onRetry(task.id)}
+                  size="small"
+                >
+                  重新生成
+                </Button>
+              </>
+            )}
+            {task.ai_status === 'failed' && (
+              <>
+                <Button
+                  type="primary"
+                  icon={<SyncOutlined />}
+                  onClick={() => onRetry(task.id)}
+                  size="small"
+                >
+                  重试
+                </Button>
+                <Popconfirm
+                  title="转人工"
+                  description="取消后文章内容将清空，确定吗？"
+                  onConfirm={() => onSwitchToManual([task.id])}
+                  okText="确定"
+                  cancelText="取消"
+                >
+                  <Button size="small" icon={<UserOutlined />}>
+                    转人工
+                  </Button>
+                </Popconfirm>
+              </>
+            )}
+          </Space>
+        )
+      }
+    >
+      <Space direction="vertical" style={{ width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Space>
+            <Text strong style={{ fontSize: 16 }}>{task.city}</Text>
+            {getWebsiteLabels(task.websites).map((site, idx) => (
+              <Tag key={idx} color="green">{site}</Tag>
+            ))}
+          </Space>
+          <StatusTag status="draft" aiStatus={task.ai_status} />
+        </div>
+        <Text type="secondary">
+          提示词类型：{getPromptTypeLabel(task.prompt_type)} | 
+          文章数：{task.quantity} | 
+          截止：{dayjs(task.deadline).format('YYYY-MM-DD')}
+        </Text>
+        {task.writing_suggestions && (
+          <Text type="secondary" ellipsis>
+            写作建议：{task.writing_suggestions}
+          </Text>
+        )}
+        {task.ai_status === 'generating' && (
+          <Progress percent={50} size="small" status="active" />
+        )}
+      </Space>
+    </Card>
+  );
+
+  return (
+    <div>
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        type="card"
+        items={[
+          {
+            key: 'generating',
+            label: (
+              <span>
+                <LoadingOutlined spin /> 生成中
+                {generatingTasks.length > 0 && ` (${generatingTasks.length})`}
+              </span>
+            ),
+            children: (
+              <div>
+                {generatingTasks.length === 0 ? (
+                  <Empty description="暂无正在生成的任务" />
+                ) : (
+                  generatingTasks.map(task => renderTaskCard(task, false))
+                )}
+              </div>
+            ),
+          },
+          {
+            key: 'completed',
+            label: (
+              <span>
+                <CheckCircleOutlined /> 已完成草稿
+                {completedTasks.length > 0 && ` (${completedTasks.length})`}
+              </span>
+            ),
+            children: (
+              <div>
+                {completedTasks.length === 0 ? (
+                  <Empty description="暂无已完成的草稿" />
+                ) : (
+                  completedTasks.map(task => renderTaskCard(task))
+                )}
+              </div>
+            ),
+          },
+          {
+            key: 'failed',
+            label: (
+              <span>
+                <StopOutlined /> 生成失败
+                {failedTasks.length > 0 && ` (${failedTasks.length})`}
+              </span>
+            ),
+            children: (
+              <div>
+                {failedTasks.length === 0 ? (
+                  <Empty description="暂无生成失败的任务" />
+                ) : (
+                  failedTasks.map(task => renderTaskCard(task))
+                )}
+              </div>
+            ),
+          },
+        ]}
+      />
+    </div>
+  );
+}
+
+// 主组件
+interface ContentWriterProps {
+  defaultStatus?: string;
+  onOpenSettings?: () => void;
+}
+
+export default function ContentWriter({ defaultStatus, onOpenSettings }: ContentWriterProps) {
+  const { tasks, loading, error, deleteTask, refreshTasks, switchToAiMode, switchToManualMode, updateAiStatus } = useTasks();
+  const [selectedTask, setSelectedTask] = useState<TaskWithArticles | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  // defaultStatus 决定显示模式：draft=未生成(人工/AI双Tab), ready=待发布, completed=已完成
+  const [activeTab, setActiveTab] = useState(defaultStatus === 'draft' ? 'manual' : 'manual');
+  const { settings } = useSettings();
+  const { websites } = useWebsites();
+  const { prompts } = usePrompts();
+
+  // 筛选状态
+  const [filterCity, setFilterCity] = useState<string | undefined>(undefined);
+  const [filterPromptType, setFilterPromptType] = useState<string | undefined>(undefined);
+  const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
+
+  // 分类任务
+  const manualTasks = useMemo(() => {
+    return tasks.filter(task => {
+      // 只显示人工模式的任务
+      if (task.generation_mode !== 'manual') return false;
+      // 日期筛选
+      if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
+      if (filterCity && task.city !== filterCity) return false;
+      if (filterPromptType && task.prompt_type !== filterPromptType) return false;
+      return true;
+    });
+  }, [tasks, filterCity, filterPromptType, selectedDate]);
+
+  const aiTasks = useMemo(() => {
+    return tasks.filter(task => {
+      // 只显示AI模式的任务
+      if (task.generation_mode !== 'ai') return false;
+      // 日期筛选
+      if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
+      if (filterCity && task.city !== filterCity) return false;
+      if (filterPromptType && task.prompt_type !== filterPromptType) return false;
+      return true;
+    });
+  }, [tasks, filterCity, filterPromptType, selectedDate]);
+
+  const promptTypes = useMemo(() => {
+    return prompts.map(p => ({ id: p.id, type: p.type }));
+  }, [prompts]);
+
+  // 转为 AI 生成
+  const handleSwitchToAi = async (taskIds: string[]) => {
+    Modal.confirm({
+      title: '确认转为 AI 生成',
+      icon: <RobotOutlined />,
+      content: `将为 ${taskIds.length} 个任务使用 AI 生成，系统将自动调用 DeepSeek API 生成文章内容。是否继续？`,
+      okText: '确定',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await switchToAiMode(taskIds);
+          message.success(`已成功将 ${taskIds.length} 个任务转为 AI 生成`);
+          setSelectedRowKeys([]);
+          setActiveTab('ai');
+          refreshTasks();
+        } catch {
+          message.error('操作失败');
+        }
+      },
+    });
+  };
+
+  // 转为人工生成
+  const handleSwitchToManual = async (taskIds: string[]) => {
+    try {
+      await switchToManualMode(taskIds);
+      message.success(`已成功将 ${taskIds.length} 个任务转为人工生成`);
+      refreshTasks();
+    } catch {
+      message.error('操作失败');
+    }
+  };
+
+  // 重新生成
+  const handleRetry = async (taskId: string) => {
+    try {
+      await updateAiStatus(taskId, 'pending');
+      message.success('已重新加入生成队列');
+      refreshTasks();
+      
+      // TODO: 实际触发 AI 生成
+      // 这里需要调用 Edge Function 触发生成
+    } catch {
+      message.error('操作失败');
+    }
+  };
+
+  // 删除任务
+  const handleDeleteTask = (task: TaskWithArticles, e: React.MouseEvent) => {
     e.stopPropagation();
     Modal.confirm({
       title: '确认删除',
@@ -661,49 +716,43 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     });
   };
 
+  if (error) {
+    return (
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
+        <Title level={3}>内容生成任务列表</Title>
+        <Card>
+          <Typography.Text type="danger">连接数据库失败，请检查 Supabase 配置</Typography.Text>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto' }}>
       {/* 页面标题 */}
       <div style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <Title level={2} style={{ margin: 0, fontWeight: 700, color: '#1a1a1a' }}>
-            {defaultStatus === 'draft' ? '未生成任务' : 
-             defaultStatus === 'ready' ? '待发布任务' : 
-             defaultStatus === 'completed' ? '已完成任务' : 
-             '任务列表'}
-          </Title>
+          <Title level={2} style={{ margin: 0, fontWeight: 700, color: '#1a1a1a' }}>内容生成者</Title>
           <Text type="secondary" style={{ fontSize: 14, marginTop: 8, display: 'block' }}>
             管理您的内容生成任务
           </Text>
         </div>
-        <Space>
-          {/* 始终显示批量 AI 生成按钮 */}
-          <Button
-            type="primary"
-            icon={<RobotOutlined />}
-            onClick={handleOpenBatchModal}
-            style={{ borderRadius: 8 }}
-            disabled={selectedRowKeys.length === 0}
-          >
-            批量 AI 生成 {selectedRowKeys.length > 0 && `(${selectedRowKeys.length})`}
-          </Button>
-          <Radio.Group
-            value={settings['feishu_notify_mode'] || 'immediate'}
-            onChange={async (e) => {
-              await setSetting('feishu_notify_mode', e.target.value);
-              message.success(`已切换为${e.target.value === 'immediate' ? '即时通知' : '批量通知'}`);
-            }}
-            optionType="button"
-            buttonStyle="solid"
-            options={[
-              { label: '即时通知', value: 'immediate' },
-              { label: '批量通知', value: 'batch' },
-            ]}
-          />
-        </Space>
+        <Radio.Group
+          value={settings['feishu_notify_mode'] || 'immediate'}
+          onChange={async (e) => {
+            await import('../hooks/useSettings').then(m => m.useSettings().setSetting('feishu_notify_mode', e.target.value));
+            message.success(`已切换为${e.target.value === 'immediate' ? '即时通知' : '批量通知'}`);
+          }}
+          optionType="button"
+          buttonStyle="solid"
+          options={[
+            { label: '即时通知', value: 'immediate' },
+            { label: '批量通知', value: 'batch' },
+          ]}
+        />
       </div>
 
-      {/* 统计区域 */}
+      {/* 日期选择和统计 */}
       <Card 
         style={{ 
           marginBottom: 24,
@@ -721,14 +770,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
               style={{ width: 140 }}
             />
             <Text style={{ fontSize: 16 }}>
-              任务 <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1890ff' }}>{dateStats.totalArticles}</Text> 篇，
-              已生产 <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1890ff', background: '#fff2e8', padding: '0 8px', borderRadius: 4 }}>{dateStats.generatedArticles}</Text> 篇，
-              已发布 <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1890ff', background: '#f6ffed', padding: '0 8px', borderRadius: 4 }}>{dateStats.publishedArticles}</Text> 篇
+              人工区 <Text style={{ fontWeight: 'bold', color: '#1890ff' }}>{manualTasks.length}</Text> 个任务，
+              AI区 <Text style={{ fontWeight: 'bold', color: '#722ed1' }}>{aiTasks.length}</Text> 个任务
             </Text>
           </Space>
-          <div style={{ color: '#666', fontSize: 14 }}>
-            {selectedDate.isSame(dayjs(), 'day') ? '今天' : selectedDate.format('M月D日')}还有 <Text style={{ color: '#ff4d4f', fontWeight: 'bold' }}>{dateStats.draftArticles}</Text> 篇待生成，{dateStats.draftArticles === 0 ? '真棒！' : '快快加油吧！'}
-          </div>
         </Space>
       </Card>
 
@@ -764,26 +809,12 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                 bordered={false}
                 options={promptTypes.map(pt => ({ label: pt.type, value: pt.id }))}
               />
-              <Select
-                placeholder="选择状态"
-                value={filterStatus}
-                onChange={setFilterStatus}
-                allowClear
-                style={{ width: 140, borderRadius: 12 }}
-                bordered={false}
-                options={[
-                  { label: '未生成', value: 'draft' },
-                  { label: '待发布', value: 'ready' },
-                  { label: '已完成', value: 'completed' },
-                ]}
-              />
-              {(filterCity || filterPromptType || filterStatus) && (
+              {(filterCity || filterPromptType) && (
                 <Button
                   type="link"
                   onClick={() => {
                     setFilterCity(undefined);
                     setFilterPromptType(undefined);
-                    setFilterStatus(undefined);
                   }}
                 >
                   清除筛选
@@ -794,139 +825,62 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         </Row>
       </Card>
 
-      {/* 生成模式切换（仅在未生成状态时显示） */}
-      {filterStatus === 'draft' && (
-        <Card size="small" style={{ marginBottom: 16 }}>
-          <Space>
-            <Text strong>选择生成方式：</Text>
-            <Radio.Group
-              value={generateMode}
-              onChange={(e) => setGenerateMode(e.target.value)}
-              optionType="button"
-              buttonStyle="solid"
-            >
-              <Radio.Button value="manual">👤 人工生成</Radio.Button>
-              <Radio.Button value="ai">🤖 AI 生成</Radio.Button>
-            </Radio.Group>
-            <Text type="secondary">
-              {generateMode === 'manual' ? '点击任务卡片，手动编辑每篇文章' : '勾选任务后批量调用 AI 生成文章'}
-            </Text>
-          </Space>
-        </Card>
-      )}
+      {/* 人工/AI Tab 切换 */}
+      <Card style={{ borderRadius: 20 }}>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          type="card"
+          items={[
+            {
+              key: 'manual',
+              label: (
+                <span>
+                  <UserOutlined /> 人工生成
+                  {manualTasks.length > 0 && ` (${manualTasks.length})`}
+                </span>
+              ),
+              children: (
+                <ManualGenerateSection
+                  tasks={manualTasks}
+                  loading={loading}
+                  selectedRowKeys={selectedRowKeys}
+                  setSelectedRowKeys={setSelectedRowKeys}
+                  onSwitchToAi={handleSwitchToAi}
+                  onEditTask={setSelectedTask}
+                  onDeleteTask={handleDeleteTask}
+                  refreshTasks={refreshTasks}
+                  websites={websites}
+                  prompts={prompts}
+                />
+              ),
+            },
+            {
+              key: 'ai',
+              label: (
+                <span>
+                  <RobotOutlined /> AI 生成
+                  {aiTasks.length > 0 && ` (${aiTasks.length})`}
+                </span>
+              ),
+              children: (
+                <AiGenerateSection
+                  tasks={aiTasks}
+                  loading={loading}
+                  onRetry={handleRetry}
+                  onSwitchToManual={handleSwitchToManual}
+                  onEditTask={setSelectedTask}
+                  refreshTasks={refreshTasks}
+                  websites={websites}
+                  prompts={prompts}
+                />
+              ),
+            },
+          ]}
+        />
+      </Card>
 
-      {/* 任务列表 - AI模式显示表格 */}
-      {generateMode === 'ai' ? (
-        <Table
-        rowSelection={rowSelection}
-        columns={columns}
-        dataSource={tableData}
-        loading={loading}
-        pagination={false}
-        locale={{ emptyText: '暂无符合条件的任务' }}
-        rowKey="key"
-        onRow={(record) => ({
-          onClick: (e) => {
-            // 防止点击标题输入框时打开任务详情
-            const target = e.target as HTMLElement;
-            if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
-              setSelectedTask(record.task);
-            }
-          },
-          style: { cursor: 'pointer' },
-        })}
-        footer={() => (
-          <div style={{ textAlign: 'center', color: '#666' }}>
-            已选择 <Text strong>{selectedRowKeys.length}</Text> 个任务，点击「批量 AI 生成」开始生成文章
-          </div>
-        )}
-      />
-      ) : (
-        /* 人工生成模式：显示任务卡片列表 */
-        <div>
-          {filteredTasks.length === 0 ? (
-            <Empty description="暂无未生成的任务" />
-          ) : (
-            filteredTasks.map(task => (
-              <Card
-                key={task.id}
-                size="small"
-                style={{ marginBottom: 12, cursor: 'pointer' }}
-                onClick={() => setSelectedTask(task)}
-              >
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Space>
-                      <Text strong style={{ fontSize: 16 }}>{task.city}</Text>
-                      {getWebsiteLabels(task.websites).map((site, idx) => (
-                        <Tag key={idx} color="green">{site}</Tag>
-                      ))}
-                    </Space>
-                    <Tag color={getTaskProgress(task).color}>{getTaskProgress(task).text}</Tag>
-                  </div>
-                  <Text type="secondary">
-                    提示词类型：{getPromptTypeLabel(task.prompt_type)} | 
-                    文章数：{task.quantity} | 
-                    截止：{dayjs(task.deadline).format('YYYY-MM-DD')}
-                  </Text>
-                </Space>
-              </Card>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* 批量生成弹窗 */}
-      <Modal
-        title={`批量 AI 生成 - 共 ${selectedTasks.length} 个任务`}
-        open={batchModalVisible}
-        onCancel={() => !generating && setBatchModalVisible(false)}
-        width={900}
-        footer={[
-          <Button key="cancel" onClick={() => setBatchModalVisible(false)} disabled={generating}>
-            取消
-          </Button>,
-          <Button
-            key="generate"
-            type="primary"
-            icon={<RobotOutlined />}
-            loading={generating}
-            onClick={handleBatchGenerate}
-          >
-            {generating ? '生成中...' : '开始生成'}
-          </Button>,
-        ]}
-        closable={!generating}
-        maskClosable={false}
-      >
-        {generating ? (
-          <div style={{ textAlign: 'center', padding: '40px 0' }}>
-            <Spin size="large" />
-            <div style={{ marginTop: 16 }}>
-              <Text>正在调用 DeepSeek API 生成文章...</Text>
-            </div>
-          </div>
-        ) : (
-          <>
-            <Alert
-              message="提示"
-              description="请为每个任务填写文章标题，然后点击「开始生成」。系统将自动调用 DeepSeek API 生成文章内容。"
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
-            <Table
-              columns={columns}
-              dataSource={tableData}
-              pagination={false}
-              rowKey="key"
-              size="small"
-              scroll={{ y: 400 }}
-            />
-          </>
-        )}
-      </Modal>
-
+      {/* 文章编辑器弹窗 */}
       {selectedTask && (
         <ArticleEditor
           task={selectedTask}
