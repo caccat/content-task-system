@@ -324,8 +324,32 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
 
   // 处理粘贴
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    // 尝试同时获取 HTML 和纯文本
+    const pastedHtml = e.clipboardData.getData('text/html');
     const pastedText = e.clipboardData.getData('text/plain');
     
+    // 如果有 HTML 内容且包含 Markdown 表格（| 字符），转换为 HTML
+    if (pastedHtml && pastedText.includes('|')) {
+      // 检查是否包含 Markdown 表格的特征（多行包含 |）
+      const lines = pastedText.split(/\r?\n/);
+      const hasTableRows = lines.some(line => line.includes('|') && line.split('|').length >= 3);
+      
+      if (hasTableRows && isMarkdown(pastedText)) {
+        e.preventDefault();
+        const htmlContent = markdownToHtml(pastedText);
+        document.execCommand('insertHTML', false, htmlContent);
+        
+        if (editorRef.current) {
+          const content = editorRef.current.innerHTML;
+          onChange(content);
+          saveToHistory(content);
+        }
+        message.success('Markdown 已自动转换为富文本格式');
+        return;
+      }
+    }
+    
+    // 纯文本检测
     if (isMarkdown(pastedText)) {
       e.preventDefault();
       const htmlContent = markdownToHtml(pastedText);
