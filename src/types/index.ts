@@ -39,7 +39,7 @@ export interface Prompt {
   updated_at: string;
   type: string;
   content: string;
-  // example_url: string | null;  // 旧字段，保留兼容性
+  example_url: string | null;  // 旧字段，兼容数据库
   example_urls: ArticleExample[] | null;  // 新字段：多个示例
 }
 
