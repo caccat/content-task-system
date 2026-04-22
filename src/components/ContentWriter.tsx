@@ -527,7 +527,7 @@ function AiGenerateSection({
   onRetry,
   onSwitchToManual,
   onEditTask,
-  refreshTasks,
+  onCancelGeneration,
   websites,
   prompts,
 }: {
@@ -536,7 +536,7 @@ function AiGenerateSection({
   onRetry: (taskId: string) => void;
   onSwitchToManual: (taskIds: string[]) => void;
   onEditTask: (task: TaskWithArticles) => void;
-  refreshTasks: () => void;
+  onCancelGeneration: (taskId: string) => void;
   websites: any[];
   prompts: any[];
 }) {
@@ -583,11 +583,24 @@ function AiGenerateSection({
               </>
             )}
             {task.ai_status === 'generating' && (
-              <Tooltip title="AI正在生成中，暂不可操作">
+              <>
                 <Button size="small" disabled icon={<LoadingOutlined />}>
                   生成中...
                 </Button>
-              </Tooltip>
+                <Popconfirm
+                  title="取消生成"
+                  description="确定要取消正在进行的 AI 生成吗？"
+                  onConfirm={() => {
+                    onCancelGeneration(task.id);
+                  }}
+                  okText="确定"
+                  cancelText="取消"
+                >
+                  <Button danger size="small" icon={<CloseCircleOutlined />}>
+                    取消
+                  </Button>
+                </Popconfirm>
+              </>
             )}
             {task.ai_status === 'completed' && (
               <>
@@ -657,6 +670,11 @@ function AiGenerateSection({
         )}
         {task.ai_status === 'generating' && (
           <Progress percent={50} size="small" status="active" />
+        )}
+        {task.ai_status === 'pending' && (
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            <LoadingOutlined spin /> 等待 AI 处理中...
+          </Text>
         )}
       </Space>
     </Card>
@@ -1194,96 +1212,90 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     }
   };
 
+  // 取消 AI 生成
+  const handleCancelGeneration = async (taskId: string) => {
+    try {
+      await updateAiStatus(taskId, 'failed');
+      refreshTasks();
+      message.info('已取消 AI 生成');
+    } catch {
+      message.error('操作失败');
+    }
+  };
+
   // 重新生成（带标题输入）
+  const [retryModalVisible, setRetryModalVisible] = useState(false);
+  const [retryTaskId, setRetryTaskId] = useState<string | null>(null);
+
   const handleRetry = async (taskId: string) => {
+    setRetryTaskId(taskId);
+    setRetryModalVisible(true);
+  };
+
+  const confirmRetry = async () => {
+    const taskId = retryTaskId;
+    if (!taskId) return;
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
-    // 从 localStorage 读取之前保存的标题
-    const savedTitle = getArticleTitle(taskId);
-    const defaultTitle = savedTitle || (task.city ? `${task.city}相关文章` : '');
+    const titleInput = document.getElementById('retry-title-input') as HTMLTextAreaElement;
+    const title = titleInput?.value?.trim();
+    
+    if (!title) {
+      message.warning('请输入文章标题');
+      return;
+    }
 
-    Modal.confirm({
-      title: '🤖 重新生成文章',
-      icon: <RobotOutlined />,
-      content: (
-        <div style={{ padding: '16px 0' }}>
-          <p style={{ marginBottom: 12 }}>请输入文章标题：</p>
-          <Input.TextArea
-            id="retry-title-input"
-            placeholder="输入文章标题，例如：人工智能在内容生产中的应用与未来"
-            rows={2}
-            style={{ width: '100%' }}
-            defaultValue={defaultTitle}
-          />
-          <p style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
-            系统将根据此标题重新生成文章内容
-          </p>
-        </div>
-      ),
-      okText: '重新生成',
-      cancelText: '取消',
-      onOk: async () => {
-        const titleInput = document.getElementById('retry-title-input') as HTMLTextAreaElement;
-        const title = titleInput?.value?.trim();
-        
-        if (!title) {
-          message.warning('请输入文章标题');
-          return;
+    setRetryModalVisible(false);
+
+    try {
+      message.loading({ content: '正在重新生成...', key: 'retry' });
+      
+      // 更新状态为生成中
+      await updateAiStatus(taskId, 'generating');
+      refreshTasks();
+
+      // 调用 Edge Function，传递用户输入的标题
+      const response = await fetch('/api/generate-articles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tasks: [{
+            city: task.city,
+            prompt_type: task.prompt_type,
+            writing_suggestions: task.writing_suggestions || '',
+            title: title,
+          }],
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success || (result.results && result.results[0]?.success)) {
+        const articleContent = result.results?.[0]?.content;
+        if (articleContent && task.articles.length > 0) {
+          await supabase
+            .from('articles')
+            .update({
+              content: convertNewlinesToHtml(articleContent),
+              status: 'draft',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', task.articles[0].id);
         }
-
-        try {
-          message.loading({ content: '正在重新生成...', key: 'retry' });
-          
-          // 更新状态为生成中
-          await updateAiStatus(taskId, 'generating');
-          refreshTasks();
-
-          // 调用 Edge Function，传递用户输入的标题
-          const response = await fetch('/api/generate-articles', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              tasks: [{
-                city: task.city,
-                prompt_type: task.prompt_type,
-                writing_suggestions: task.writing_suggestions || '',
-                title: title, // 使用用户输入的标题
-              }],
-            }),
-          });
-
-          const result = await response.json();
-
-          if (result.success || (result.results && result.results[0]?.success)) {
-            // 保存生成的文章内容（将换行符转换为 HTML）
-            const articleContent = result.results?.[0]?.content;
-            if (articleContent && task.articles.length > 0) {
-              await supabase
-                .from('articles')
-                .update({
-                  content: convertNewlinesToHtml(articleContent),
-                  status: 'draft',
-                  updated_at: new Date().toISOString(),
-                })
-                .eq('id', task.articles[0].id);
-            }
-            // 保存新标题到浏览器 localStorage
-            saveArticleTitle(taskId, title);
-            await updateAiStatus(taskId, 'completed');
-            message.success({ content: '重新生成成功！', key: 'retry' });
-          } else {
-            const errorMsg = result.error || result.results?.[0]?.error || '未知错误';
-            message.error({ content: `生成失败: ${errorMsg}`, key: 'retry' });
-            await updateAiStatus(taskId, 'failed');
-          }
-          
-          refreshTasks();
-        } catch {
-          message.error('操作失败');
-        }
-      },
-    });
+        saveArticleTitle(taskId, title);
+        await updateAiStatus(taskId, 'completed');
+        message.success({ content: '重新生成成功！', key: 'retry' });
+      } else {
+        const errorMsg = result.error || result.results?.[0]?.error || '未知错误';
+        message.error({ content: `生成失败: ${errorMsg}`, key: 'retry' });
+        await updateAiStatus(taskId, 'failed');
+      }
+      
+      refreshTasks();
+    } catch {
+      message.error('操作失败');
+    }
   };
 
   // 删除任务
@@ -1321,7 +1333,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
 
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-      {/* 批量生成弹窗 */}
+{/* 批量生成弹窗 */}
       <Modal
         title="🤖 批量 AI 生成文章"
         open={batchModalVisible}
@@ -1334,6 +1346,49 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
           onConfirm={handleBatchGenerate}
         />
       </Modal>
+
+      {/* 重新生成弹窗 - 去掉取消按钮，右上角有关闭按钮 */}
+      {retryTaskId && (() => {
+        const task = tasks.find(t => t.id === retryTaskId);
+        const savedTitle = task ? getArticleTitle(retryTaskId) : null;
+        const defaultTitle = savedTitle || (task?.city ? `${task.city}相关文章` : '');
+        return (
+          <Modal
+            title={
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>🤖 重新生成文章</span>
+                <Button 
+                  type="text" 
+                  size="small" 
+                  onClick={() => setRetryModalVisible(false)}
+                  icon={<span style={{ fontSize: 18 }}>×</span>}
+                />
+              </div>
+            }
+            open={retryModalVisible}
+            onCancel={() => setRetryModalVisible(false)}
+            footer={
+              <Button type="primary" onClick={confirmRetry} block>
+                重新生成
+              </Button>
+            }
+            width={500}
+          >
+            <div style={{ padding: '8px 0' }}>
+              <p style={{ marginBottom: 12 }}>请输入文章标题：</p>
+              <Input.TextArea
+                id="retry-title-input"
+                placeholder="输入文章标题，例如：人工智能在内容生产中的应用与未来"
+                rows={2}
+                defaultValue={defaultTitle}
+              />
+              <p style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
+                系统将根据此标题重新生成文章内容
+              </p>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* 页面标题 */}
       <div style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1479,7 +1534,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                       onRetry={handleRetry}
                       onSwitchToManual={handleSwitchToManual}
                       onEditTask={setSelectedTask}
-                      refreshTasks={refreshTasks}
+                      onCancelGeneration={handleCancelGeneration}
                       websites={websites}
                       prompts={prompts}
                     />
