@@ -1014,37 +1014,73 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         },
       });
     } else {
-      // 批量任务：多行输入框
+      // 批量任务：表格形式，城市+标题两列
+      const [batchTitles, setBatchTitles] = useState<Record<string, string>>({});
+
+      // 初始化标题（尝试从 localStorage 读取）
+      useEffect(() => {
+        const initial: Record<string, string> = {};
+        tasksToGenerate.forEach((task, index) => {
+          const saved = getArticleTitle(task.id);
+          initial[task.id] = saved || `${task.city}相关文章`;
+        });
+        setBatchTitles(initial);
+      }, []);
+
       Modal.confirm({
         title: '🤖 批量 AI 生成文章',
         icon: <RobotOutlined />,
         content: (
-          <div style={{ padding: '16px 0' }}>
-            <p style={{ marginBottom: 12 }}>请为每个任务输入标题（每行一个，按顺序匹配）：</p>
-            <Input.TextArea
-              id="batch-titles-input"
-              placeholder={`第1个任务标题\n第2个任务标题\n第3个任务标题...\n（共 ${tasksToGenerate.length} 个任务）`}
-              rows={Math.min(tasksToGenerate.length + 2, 8)}
-              style={{ width: '100%' }}
-            />
-            <p style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
-              共 {tasksToGenerate.length} 个任务，将按顺序匹配您输入的标题
+          <div style={{ padding: '8px 0', maxHeight: 400, overflowY: 'auto' }}>
+            <p style={{ marginBottom: 12, color: '#666' }}>
+              请为每个任务输入标题（共 {tasksToGenerate.length} 个任务）：
             </p>
+            <div style={{ border: '1px solid #f0f0f0', borderRadius: 6 }}>
+              {/* 表头 */}
+              <div style={{ 
+                display: 'flex', 
+                background: '#fafafa', 
+                padding: '10px 12px', 
+                borderBottom: '1px solid #f0f0f0',
+                fontWeight: 500,
+                fontSize: 13
+              }}>
+                <div style={{ width: 120 }}>城市</div>
+                <div style={{ flex: 1 }}>标题</div>
+              </div>
+              {/* 表格行 */}
+              {tasksToGenerate.map((task) => (
+                <div key={task.id} style={{ 
+                  display: 'flex', 
+                  padding: '8px 12px', 
+                  borderBottom: index < tasksToGenerate.length - 1 ? '1px solid #f0f0f0' : 'none',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ width: 120, fontWeight: 500, color: '#1890ff' }}>
+                    {task.city}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <Input
+                      id={`batch-title-${task.id}`}
+                      value={batchTitles[task.id] || ''}
+                      onChange={(e) => setBatchTitles(prev => ({ ...prev, [task.id]: e.target.value }))}
+                      placeholder="输入文章标题"
+                      size="small"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         ),
         okText: '开始生成',
         cancelText: '取消',
         onOk: async () => {
-          const titlesInput = document.getElementById('batch-titles-input') as HTMLTextAreaElement;
-          const titles = titlesInput?.value?.split('\n').map(t => t.trim()).filter(t => t);
+          const titles = tasksToGenerate.map(t => batchTitles[t.id]?.trim() || `${t.city}相关文章`);
           
-          if (!titles || titles.length === 0) {
-            message.warning('请输入至少一个文章标题');
+          if (titles.some(t => !t)) {
+            message.warning('请确保所有任务都填写了标题');
             return;
-          }
-          
-          if (titles.length < tasksToGenerate.length) {
-            message.warning(`您输入了 ${titles.length} 个标题，但有 ${tasksToGenerate.length} 个任务，部分任务将使用默认标题`);
           }
           
           await generateWithAi(tasksToGenerate, titles);
