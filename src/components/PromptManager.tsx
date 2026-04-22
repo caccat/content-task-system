@@ -12,6 +12,7 @@ import {
   Tag,
   message,
 } from 'antd';
+import type { ArticleExample } from '../types';
 import {
   PlusOutlined,
   EditOutlined,
@@ -30,8 +31,40 @@ export default function PromptManager() {
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [exampleList, setExampleList] = useState<ArticleExample[]>([]);
+
+  // 处理编辑时初始化示例列表
+  const initExampleList = (record: Prompt) => {
+    if (record.example_urls && Array.isArray(record.example_urls)) {
+      setExampleList(record.example_urls);
+    } else if (record.example_url) {
+      // 兼容旧数据：只有一个 example_url
+      setExampleList([{ note: '', url: record.example_url }]);
+    } else {
+      setExampleList([]);
+    }
+  };
+
+  // 添加示例
+  const addExample = () => {
+    setExampleList([...exampleList, { note: '', url: '' }]);
+  };
+
+  // 移除示例
+  const removeExample = (index: number) => {
+    const newList = exampleList.filter((_, i) => i !== index);
+    setExampleList(newList);
+  };
+
+  // 更新示例
+  const updateExample = (index: number, field: 'note' | 'url', value: string) => {
+    const newList = [...exampleList];
+    newList[index] = { ...newList[index], [field]: value };
+    setExampleList(newList);
+  };
 
   const handleAdd = () => {
+    setExampleList([]);
     setEditingPrompt(null);
     form.resetFields();
     setIsModalOpen(true);
@@ -42,8 +75,8 @@ export default function PromptManager() {
     form.setFieldsValue({
       type: record.type,
       content: record.content,
-      example_url: record.example_url,
     });
+    initExampleList(record);
     setIsModalOpen(true);
   };
 
@@ -61,18 +94,23 @@ export default function PromptManager() {
       const values = await form.validateFields();
       setSaving(true);
 
+      // 过滤掉空链接的示例
+      const validExamples = exampleList.filter(ex => ex.url.trim() !== '');
+
       if (editingPrompt) {
         await updatePrompt(editingPrompt.id, {
           type: values.type,
           content: values.content,
-          example_url: values.example_url || null,
+          example_url: null,  // 旧字段设为 null
+          example_urls: validExamples.length > 0 ? validExamples : null,
         });
         message.success('更新成功');
       } else {
         await createPrompt({
           type: values.type,
           content: values.content,
-          example_url: values.example_url || null,
+          example_url: null,  // 旧字段设为 null
+          example_urls: validExamples.length > 0 ? validExamples : null,
         });
         message.success('添加成功');
       }
@@ -99,17 +137,25 @@ export default function PromptManager() {
       width: 400,
     },
     {
-      title: '文章示例链接',
-      dataIndex: 'example_url',
-      key: 'example_url',
-      render: (url: string) =>
-        url ? (
-          <a href={url} target="_blank" rel="noopener noreferrer">
-            <LinkOutlined /> 查看示例
-          </a>
-        ) : (
-          '-'
-        ),
+      title: '文章示例',
+      dataIndex: 'example_urls',
+      key: 'example_urls',
+      render: (exampleUrls: ArticleExample[] | null, record: Prompt) => {
+        // 兼容旧数据
+        if (!exampleUrls && record.example_url) {
+          return (
+            <a href={record.example_url} target="_blank" rel="noopener noreferrer">
+              <LinkOutlined /> 1个示例
+            </a>
+          );
+        }
+        if (!exampleUrls || exampleUrls.length === 0) return '-';
+        return (
+          <span>
+            <LinkOutlined /> {exampleUrls.length}个示例
+          </span>
+        );
+      },
     },
     {
       title: '操作',
@@ -194,18 +240,42 @@ export default function PromptManager() {
             />
           </Form.Item>
 
-          <Form.Item
-            name="example_url"
-            label="文章示例链接"
-            rules={[
-              {
-                type: 'url',
-                message: '请输入有效的URL地址',
-                warningOnly: true,
-              },
-            ]}
-          >
-            <Input placeholder="https://example.com/article" />
+          <Form.Item label="文章示例链接">
+            <div style={{ border: '1px dashed #d9d9d9', borderRadius: 8, padding: 16 }}>
+              {exampleList.map((example, index) => (
+                <div key={index} style={{ marginBottom: index < exampleList.length - 1 ? 12 : 0 }}>
+                  <Space.Compact style={{ width: '100%' }}>
+                    <Input
+                      placeholder="备注说明（如：优秀案例）"
+                      value={example.note}
+                      onChange={(e) => updateExample(index, 'note', e.target.value)}
+                      style={{ width: '30%' }}
+                    />
+                    <Input
+                      placeholder="示例链接 URL"
+                      value={example.url}
+                      onChange={(e) => updateExample(index, 'url', e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <Button
+                      danger
+                      onClick={() => removeExample(index)}
+                      disabled={exampleList.length === 1}
+                    >
+                      删除
+                    </Button>
+                  </Space.Compact>
+                </div>
+              ))}
+              <Button
+                type="dashed"
+                onClick={addExample}
+                icon={<PlusOutlined />}
+                style={{ marginTop: 8, width: '100%' }}
+              >
+                添加示例
+              </Button>
+            </div>
           </Form.Item>
         </Form>
       </Modal>

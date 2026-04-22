@@ -70,9 +70,16 @@ export function useTasks() {
   const createTask = async (taskData: Omit<Task, 'id' | 'created_at' | 'updated_at'>) => {
     console.log('createTask 被调用:', taskData);
     
+    // 确保新字段有默认值
+    const taskWithDefaults = {
+      ...taskData,
+      generation_mode: taskData.generation_mode || 'manual',
+      ai_status: taskData.ai_status || null,
+    };
+
     const { data, error } = await supabase
       .from('tasks')
-      .insert(taskData as any)
+      .insert(taskWithDefaults as any)
       .select()
       .single();
 
@@ -124,7 +131,57 @@ export function useTasks() {
     }
   };
 
-  return { tasks, loading, error, createTask, deleteTask, refreshTasks: fetchTasks };
+  // 将任务转为 AI 生成模式
+  const switchToAiMode = async (taskIds: string[]) => {
+    const { error } = await supabase
+      .from('tasks')
+      .update({
+        generation_mode: 'ai',
+        ai_status: 'pending',
+        updated_at: new Date().toISOString(),
+      })
+      .in('id', taskIds);
+
+    if (error) {
+      console.error('切换为AI模式失败:', error);
+      throw error;
+    }
+  };
+
+  // 将任务转为人工生成模式
+  const switchToManualMode = async (taskIds: string[]) => {
+    const { error } = await supabase
+      .from('tasks')
+      .update({
+        generation_mode: 'manual',
+        ai_status: null,
+        updated_at: new Date().toISOString(),
+      })
+      .in('id', taskIds);
+
+    if (error) {
+      console.error('切换为人工模式失败:', error);
+      throw error;
+    }
+  };
+
+  // 更新 AI 任务状态
+  const updateAiStatus = async (taskId: string, aiStatus: 'pending' | 'generating' | 'completed' | 'failed') => {
+    const { error } = await supabase
+      .from('tasks')
+      .update({
+        ai_status: aiStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', taskId);
+
+    if (error) {
+      console.error('更新AI状态失败:', error);
+      throw error;
+    }
+  };
+
+  return { tasks, loading, error, createTask, deleteTask, refreshTasks: fetchTasks, switchToAiMode, switchToManualMode, updateAiStatus };
 }
 
 export function useArticles(taskId?: string) {

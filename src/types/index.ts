@@ -27,13 +27,20 @@ export interface Website {
   price: number;
 }
 
+// 文章示例类型
+export interface ArticleExample {
+  note: string;  // 备注说明
+  url: string;   // 示例链接
+}
+
 export interface Prompt {
   id: string;
   created_at: string;
   updated_at: string;
   type: string;
   content: string;
-  example_url: string | null;
+  example_url: string | null;  // 旧字段，兼容数据库
+  example_urls: ArticleExample[] | null;  // 新字段：多个示例
 }
 
 export interface AppSettings {
@@ -56,6 +63,10 @@ export interface Task {
   deadline: string;
   status: 'pending' | 'in_progress' | 'completed';
   created_by: string;
+  // 新增：生成模式
+  generation_mode: 'manual' | 'ai';
+  // 新增：AI生成状态
+  ai_status: 'pending' | 'generating' | 'completed' | 'failed' | null;
 }
 
 export const CITIES = [
