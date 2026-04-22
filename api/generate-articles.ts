@@ -35,7 +35,7 @@ async function generateArticle(city: string, promptContent: string, writingSugge
         },
       ],
       temperature: 0.7,
-      max_tokens: 2000,
+      max_tokens: 8000,
     }),
   });
 
