@@ -647,20 +647,82 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     return prompts.map(p => ({ id: p.id, type: p.type }));
   }, [prompts]);
 
-  // 转为 AI 生成
+  // 转为 AI 生成并触发生成
   const handleSwitchToAi = async (taskIds: string[]) => {
     Modal.confirm({
       title: '确认转为 AI 生成',
       icon: <RobotOutlined />,
-      content: `将为 ${taskIds.length} 个任务使用 AI 生成，系统将自动调用 DeepSeek API 生成文章内容。是否继续？`,
+      content: `将为 ${taskIds.length} 个任务使用 AI 生成，系统将自动调用 DeepSeek API 生成文章内容。预计每篇需要 10-30 秒，是否继续？`,
       okText: '确定',
       cancelText: '取消',
       onOk: async () => {
         try {
+          // 1. 先更新任务状态为 AI 模式
           await switchToAiMode(taskIds);
-          message.success(`已成功将 ${taskIds.length} 个任务转为 AI 生成`);
           setSelectedRowKeys([]);
           setActiveTab('ai');
+          refreshTasks();
+
+          // 2. 获取需要生成的任务详情
+          const tasksToGenerate = tasks.filter(t => taskIds.includes(t.id));
+          
+          // 3. 并行调用 Edge Function 生成文章
+          message.loading({ content: `正在调用 AI 生成 ${tasksToGenerate.length} 篇文章...`, key: 'ai-generate' });
+          
+          const generatePromises = tasksToGenerate.map(async (task) => {
+            try {
+              // 更新状态为生成中
+              await updateAiStatus(task.id, 'generating');
+              refreshTasks();
+
+              // 调用 Edge Function
+              const response = await fetch('/api/generate-articles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  tasks: [{
+                    city: task.city,
+                    prompt_type: task.prompt_type,
+                    writing_suggestions: task.writing_suggestions || '',
+                    title: `${task.city} - ${dayjs(task.deadline).format('MM月DD日')}文章`,
+                  }],
+                }),
+              });
+
+              const result = await response.json();
+
+              if (result.success || (result.results && result.results[0]?.success)) {
+                // 保存生成的文章内容
+                const articleContent = result.results?.[0]?.content;
+                if (articleContent && task.articles.length > 0) {
+                  await supabase
+                    .from('articles')
+                    .update({
+                      content: articleContent,
+                      status: 'draft',
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', task.articles[0].id);
+                }
+                // 更新状态为已完成
+                await updateAiStatus(task.id, 'completed');
+              } else {
+                // 生成失败
+                const errorMsg = result.error || result.results?.[0]?.error || '未知错误';
+                message.error({ content: `${task.city}: ${errorMsg}`, key: 'ai-error' });
+                await updateAiStatus(task.id, 'failed');
+              }
+            } catch (err: any) {
+              console.error(`生成失败:`, err);
+              await updateAiStatus(task.id, 'failed');
+            }
+            refreshTasks();
+          });
+
+          // 并行执行所有生成
+          await Promise.all(generatePromises);
+          
+          message.success({ content: `AI 生成完成！`, key: 'ai-generate' });
           refreshTasks();
         } catch {
           message.error('操作失败');
@@ -683,12 +745,52 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   // 重新生成
   const handleRetry = async (taskId: string) => {
     try {
-      await updateAiStatus(taskId, 'pending');
-      message.success('已重新加入生成队列');
-      refreshTasks();
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      message.loading({ content: '正在重新生成...', key: 'retry' });
       
-      // TODO: 实际触发 AI 生成
-      // 这里需要调用 Edge Function 触发生成
+      // 更新状态为生成中
+      await updateAiStatus(taskId, 'generating');
+      refreshTasks();
+
+      // 调用 Edge Function
+      const response = await fetch('/api/generate-articles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tasks: [{
+            city: task.city,
+            prompt_type: task.prompt_type,
+            writing_suggestions: task.writing_suggestions || '',
+            title: `${task.city} - ${dayjs(task.deadline).format('MM月DD日')}文章`,
+          }],
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success || (result.results && result.results[0]?.success)) {
+        const articleContent = result.results?.[0]?.content;
+        if (articleContent && task.articles.length > 0) {
+          await supabase
+            .from('articles')
+            .update({
+              content: articleContent,
+              status: 'draft',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', task.articles[0].id);
+        }
+        await updateAiStatus(taskId, 'completed');
+        message.success({ content: '重新生成成功！', key: 'retry' });
+      } else {
+        const errorMsg = result.error || result.results?.[0]?.error || '未知错误';
+        message.error({ content: `生成失败: ${errorMsg}`, key: 'retry' });
+        await updateAiStatus(taskId, 'failed');
+      }
+      
+      refreshTasks();
     } catch {
       message.error('操作失败');
     }
