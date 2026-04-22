@@ -184,6 +184,8 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   const { articles, updateArticle, loading } = useArticles(task.id);
   const [editingArticle, setEditingArticle] = useState<Article | null>(null);
   const [content, setContent] = useState('');
+  const [promptDetailVisible, setPromptDetailVisible] = useState(false);
+  const [selectedPrompt, setSelectedPrompt] = useState<any>(null);
 
   const handleEdit = (article: Article) => {
     setEditingArticle(article);
@@ -246,6 +248,18 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
     return prompt ? prompt.type : promptTypeId;
   };
 
+  const getPrompt = (promptTypeId: string) => {
+    return prompts.find((p: any) => p.id === promptTypeId);
+  };
+
+  const handleViewPromptDetail = () => {
+    const prompt = getPrompt(task.prompt_type);
+    if (prompt) {
+      setSelectedPrompt(prompt);
+      setPromptDetailVisible(true);
+    }
+  };
+
   return (
     <Modal
       title={`编辑文章 - ${task.city}`}
@@ -269,7 +283,13 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
           </div>
           <div>
             <Text strong>提示词类型：</Text>
-            <Tag color="purple">{getPromptTypeLabel(task.prompt_type)}</Tag>
+            <Tag 
+              color="purple" 
+              style={{ cursor: 'pointer' }}
+              onClick={handleViewPromptDetail}
+            >
+              {getPromptTypeLabel(task.prompt_type)}（点击查看详情）
+            </Tag>
           </div>
           {task.writing_suggestions && (
             <div>
@@ -366,6 +386,51 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
           onChange={setContent}
           placeholder="请输入文章内容，使用工具栏设置样式、插入图片等..."
         />
+      </Modal>
+
+      {/* 提示词详情弹窗 */}
+      <Modal
+        title={`📝 ${selectedPrompt?.type || '提示词详情'}`}
+        open={promptDetailVisible}
+        onCancel={() => setPromptDetailVisible(false)}
+        footer={null}
+        width={700}
+      >
+        {selectedPrompt && (
+          <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+            <div style={{ marginBottom: 16 }}>
+              <Text strong style={{ fontSize: 14 }}>提示词内容：</Text>
+              <div style={{ 
+                background: '#f5f5f5', 
+                padding: 16, 
+                borderRadius: 8, 
+                marginTop: 8,
+                whiteSpace: 'pre-wrap',
+                fontSize: 13,
+                lineHeight: 1.8
+              }}>
+                {selectedPrompt.content || '暂无内容'}
+              </div>
+            </div>
+            {selectedPrompt.example_url && (
+              <div style={{ marginTop: 16 }}>
+                <Text strong style={{ fontSize: 14 }}>文章示例：</Text>
+                <div style={{ 
+                  background: '#f0f9ff', 
+                  padding: 16, 
+                  borderRadius: 8, 
+                  marginTop: 8,
+                  border: '1px solid #91d5ff'
+                }}>
+                  <Text type="secondary">示例链接：</Text>
+                  <a href={selectedPrompt.example_url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8 }}>
+                    {selectedPrompt.example_url}
+                  </a>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </Modal>
   );
