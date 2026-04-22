@@ -28,6 +28,9 @@ interface RichTextEditorProps {
 function markdownToHtml(markdown: string): string {
   let html = markdown;
   
+  // 标准化换行符（Windows 的 \r\n 转为 \n）
+  html = html.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  
   // 处理代码块
   const codeBlocks: string[] = [];
   html = html.replace(/```([\s\S]*?)```/g, (match) => {
@@ -73,8 +76,8 @@ function markdownToHtml(markdown: string): string {
   // 处理水平线
   html = html.replace(/^---$/gim, '<hr>');
   
-  // 处理表格
-  const tableRegex = /\|(.+)\|\n\|[-:\|\s]+\|\n((?:\|.+\|\n?)+)/g;
+  // 处理表格（兼容 Windows 的 \r\n 换行符）
+  const tableRegex = /\|(.+)\|\r?\n\|[-:\|\s]+\|\r?\n((?:\|.+\|\r?\n?)+)/g;
   html = html.replace(tableRegex, (match, header, rows) => {
     const headers = header.split('|').map((h: string) => h.trim()).filter((h: string) => h);
     const rowLines = rows.trim().split('\n');
