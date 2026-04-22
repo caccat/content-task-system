@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, List, Badge, Tag, Button, Modal, Input, message, Typography, Space, Progress, Popconfirm, Select, Row, Col, DatePicker, Table, Checkbox, Spin, Alert, Empty, Tabs, Radio, Tooltip } from 'antd';
-import { EditOutlined, FileTextOutlined, DeleteOutlined, ExclamationCircleOutlined, CheckCircleOutlined, UndoOutlined, CalendarOutlined, RobotOutlined, UserOutlined, LoadingOutlined, SyncOutlined, StopOutlined } from '@ant-design/icons';
+import { EditOutlined, FileTextOutlined, DeleteOutlined, ExclamationCircleOutlined, CheckCircleOutlined, UndoOutlined, CalendarOutlined, RobotOutlined, UserOutlined, LoadingOutlined, SyncOutlined, StopOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useTasks, useArticles } from '../hooks/useSupabase';
 import { useSettings } from '../hooks/useSettings';
 import { usePrompts } from '../hooks/usePrompts';
@@ -450,6 +450,20 @@ function AiGenerateSection({
       extra={
         showActions && (
           <Space>
+            {task.ai_status === 'pending' && (
+              <>
+                <Tooltip title="取消 AI 生成，转为人工编辑">
+                  <Button
+                    danger
+                    icon={<CloseCircleOutlined />}
+                    onClick={() => onSwitchToManual([task.id])}
+                    size="small"
+                  >
+                    取消
+                  </Button>
+                </Tooltip>
+              </>
+            )}
             {task.ai_status === 'generating' && (
               <Tooltip title="AI正在生成中，暂不可操作">
                 <Button size="small" disabled icon={<LoadingOutlined />}>
