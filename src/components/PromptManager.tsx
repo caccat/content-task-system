@@ -101,6 +101,7 @@ export default function PromptManager() {
         await updatePrompt(editingPrompt.id, {
           type: values.type,
           content: values.content,
+          example_url: null,  // 旧字段设为 null
           example_urls: validExamples.length > 0 ? validExamples : null,
         });
         message.success('更新成功');
@@ -108,6 +109,7 @@ export default function PromptManager() {
         await createPrompt({
           type: values.type,
           content: values.content,
+          example_url: null,  // 旧字段设为 null
           example_urls: validExamples.length > 0 ? validExamples : null,
         });
         message.success('添加成功');
