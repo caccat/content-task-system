@@ -14,6 +14,21 @@ import RichTextEditor from './RichTextEditor';
 const { Text, Title } = Typography;
 const { TabPane } = Tabs;
 
+// 将换行符转换为 HTML 标签
+function convertNewlinesToHtml(text: string): string {
+  if (!text) return '';
+  // 先按双换行分割段落，再按单换行转<br>
+  const paragraphs = text.split(/\n\n+/);
+  const htmlParagraphs = paragraphs.map(p => {
+    const trimmed = p.trim();
+    if (!trimmed) return '';
+    // 将单换行替换为 <br>
+    const withBreaks = trimmed.replace(/\n/g, '<br>');
+    return `<p style="margin:8px 0;line-height:1.6;">${withBreaks}</p>`;
+  }).filter(Boolean);
+  return htmlParagraphs.join('');
+}
+
 // 发送飞书通知
 const sendFeishuNotification = async (webhook: string, task: TaskWithArticles, article: Article) => {
   try {
@@ -1049,13 +1064,13 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
           const result = await response.json();
 
           if (result.success || (result.results && result.results[0]?.success)) {
-            // 保存生成的文章内容
+            // 保存生成的文章内容（将换行符转换为 HTML）
             const articleContent = result.results?.[0]?.content;
             if (articleContent && task.articles.length > 0) {
               await supabase
                 .from('articles')
                 .update({
-                  content: articleContent,
+                  content: convertNewlinesToHtml(articleContent),
                   status: 'draft',
                   updated_at: new Date().toISOString(),
                 })
@@ -1155,12 +1170,13 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
           const result = await response.json();
 
           if (result.success || (result.results && result.results[0]?.success)) {
+            // 保存生成的文章内容（将换行符转换为 HTML）
             const articleContent = result.results?.[0]?.content;
             if (articleContent && task.articles.length > 0) {
               await supabase
                 .from('articles')
                 .update({
-                  content: articleContent,
+                  content: convertNewlinesToHtml(articleContent),
                   status: 'draft',
                   updated_at: new Date().toISOString(),
                 })
