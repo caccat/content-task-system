@@ -691,7 +691,11 @@ function AiGenerateSection({
             key: 'generating',
             label: (
               <span>
-                <LoadingOutlined spin /> 生成中
+                {generatingTasks.length > 0 ? (
+                  <LoadingOutlined spin /> 
+                ) : (
+                  <FileTextOutlined />
+                )} 生成中
                 {generatingTasks.length > 0 && ` (${generatingTasks.length})`}
               </span>
             ),
