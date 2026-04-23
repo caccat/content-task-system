@@ -180,6 +180,37 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
   const [filterStatus, setFilterStatus] = useState<string | undefined>(defaultStatus);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
 
+  // 计算逾期任务（截止日期早于今天且有待发布文章的任务）
+  const overdueTasksInfo = useMemo(() => {
+    const today = dayjs().startOf('day');
+    const overdueTasks = tasks.filter(task => {
+      const deadline = dayjs(task.deadline).startOf('day');
+      // 截止日期早于今天
+      if (!deadline.isBefore(today)) return false;
+      // 有待发布的文章
+      const hasReadyArticle = task.articles.some(a => a.status === 'ready');
+      return hasReadyArticle;
+    });
+
+    // 按逾期日期分组
+    const groupedByDate: Record<string, { date: dayjs.Dayjs; readyCount: number; ungeneratedCount: number }> = {};
+    overdueTasks.forEach(task => {
+      const deadline = dayjs(task.deadline);
+      const dateKey = deadline.format('M月D日');
+      if (!groupedByDate[dateKey]) {
+        groupedByDate[dateKey] = { date: deadline, readyCount: 0, ungeneratedCount: 0 };
+      }
+      
+      // 统计待发布和未生成
+      const ready = task.articles.filter(a => a.status === 'ready').length;
+      const ungenerated = task.quantity - task.articles.filter(a => a.status !== 'draft').length;
+      groupedByDate[dateKey].readyCount += ready;
+      groupedByDate[dateKey].ungeneratedCount += ungenerated > 0 ? ungenerated : task.quantity;
+    });
+
+    return groupedByDate;
+  }, [tasks]);
+
   // 当 defaultStatus 变化时更新 filterStatus
   useEffect(() => {
     setFilterStatus(defaultStatus);
@@ -329,6 +360,42 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
           </div>
         </Space>
       </Card>
+
+      {/* 逾期任务提示 */}
+      {Object.keys(overdueTasksInfo).length > 0 && (
+        <Card
+          style={{
+            marginBottom: 24,
+            background: '#fff2e8',
+            border: '1px solid #ffbb96',
+          }}
+          bodyStyle={{ padding: '12px 24px' }}
+        >
+          <Space wrap align="center">
+            <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 16 }} />
+            <Text style={{ fontSize: 14, color: '#d4380d' }}>
+              逾期任务
+              {Object.entries(overdueTasksInfo).map(([date, info], idx) => (
+                <span key={date}>
+                  {idx > 0 && '，'}
+                  {date} 有{' '}
+                  {info.readyCount > 0 && <Text strong style={{ color: '#fa8c16' }}>{info.readyCount} 个待发布</Text>}
+                  {info.readyCount > 0 && info.ungeneratedCount > 0 && '，'}
+                  {info.ungeneratedCount > 0 && <Text strong style={{ color: '#ff4d4f' }}>{info.ungeneratedCount} 个未生成</Text>}
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => setSelectedDate(info.date)}
+                    style={{ padding: '0 4px', height: 'auto', marginLeft: 8 }}
+                  >
+                    [回到 {date}]
+                  </Button>
+                </span>
+              ))}
+            </Text>
+          </Space>
+        </Card>
+      )}
 
       {/* 筛选 */}
       <Card 
