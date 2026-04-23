@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Card, List, Badge, Tag, Button, Modal, Input, message, Typography, Space, Progress, Popconfirm, Select, Row, Col, DatePicker, Table, Checkbox, Spin, Alert, Empty, Tabs, Radio, Tooltip } from 'antd';
 import { EditOutlined, FileTextOutlined, DeleteOutlined, ExclamationCircleOutlined, CheckCircleOutlined, UndoOutlined, CalendarOutlined, RobotOutlined, UserOutlined, LoadingOutlined, SyncOutlined, StopOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useTasks, useArticles } from '../hooks/useSupabase';
@@ -31,6 +31,7 @@ function convertNewlinesToHtml(text: string): string {
 
 // localStorage 存取标题和额外要求（仅限用户浏览器）
 const ARTICLE_DATA_KEY = 'content_task_article_data';
+const ARTICLE_DRAFT_KEY = 'content_task_article_drafts'; // 文章草稿自动保存
 
 function saveArticleData(taskId: string, title: string, extraRequirement: string = '') {
   try {
@@ -57,6 +58,44 @@ function getArticleData(taskId: string): { title: string | null; extraRequiremen
     console.error('读取数据失败:', e);
   }
   return { title: null, extraRequirement: '' };
+}
+
+// 文章草稿自动保存
+function saveArticleDraft(articleId: string, content: string) {
+  try {
+    const stored = localStorage.getItem(ARTICLE_DRAFT_KEY);
+    const drafts = stored ? JSON.parse(stored) : {};
+    drafts[articleId] = { content, savedAt: Date.now() };
+    localStorage.setItem(ARTICLE_DRAFT_KEY, JSON.stringify(drafts));
+  } catch (e) {
+    console.error('保存草稿失败:', e);
+  }
+}
+
+function getArticleDraft(articleId: string): string | null {
+  try {
+    const stored = localStorage.getItem(ARTICLE_DRAFT_KEY);
+    if (stored) {
+      const drafts = JSON.parse(stored);
+      return drafts[articleId]?.content || null;
+    }
+  } catch (e) {
+    console.error('读取草稿失败:', e);
+  }
+  return null;
+}
+
+function clearArticleDraft(articleId: string) {
+  try {
+    const stored = localStorage.getItem(ARTICLE_DRAFT_KEY);
+    if (stored) {
+      const drafts = JSON.parse(stored);
+      delete drafts[articleId];
+      localStorage.setItem(ARTICLE_DRAFT_KEY, JSON.stringify(drafts));
+    }
+  } catch (e) {
+    console.error('清除草稿失败:', e);
+  }
 }
 
 // 兼容旧版本
@@ -411,10 +450,32 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   const [content, setContent] = useState('');
   const [promptDetailVisible, setPromptDetailVisible] = useState(false);
   const [selectedPrompt, setSelectedPrompt] = useState<any>(null);
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 自动保存草稿（防抖 2 秒）
+  useEffect(() => {
+    if (editingArticle && content !== editingArticle.content) {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+      autoSaveTimerRef.current = setTimeout(() => {
+        if (editingArticle) {
+          saveArticleDraft(editingArticle.id, content);
+        }
+      }, 2000);
+    }
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [content, editingArticle]);
 
   const handleEdit = (article: Article) => {
     setEditingArticle(article);
-    setContent(article.content);
+    // 优先读取自动保存的草稿，否则用数据库内容
+    const draft = getArticleDraft(article.id);
+    setContent(draft || article.content);
   };
 
   const handleSave = async () => {
@@ -424,6 +485,8 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
         content,
         status: editingArticle.status,
       });
+      // 清除自动保存的草稿
+      clearArticleDraft(editingArticle.id);
       message.success('文章已保存');
       setEditingArticle(null);
     } catch {
