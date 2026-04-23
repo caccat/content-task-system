@@ -98,9 +98,13 @@ function clearArticleDraft(articleId: string) {
   }
 }
 
-// 兼容旧版本 - saveArticleTitle 用于旧代码
+// 兼容旧版本
 function saveArticleTitle(taskId: string, title: string) {
   saveArticleData(taskId, title, '');
+}
+
+function getArticleTitle(taskId: string): string | null {
+  return getArticleData(taskId).title;
 }
 
 // 批量生成标题编辑器子组件
@@ -115,10 +119,10 @@ function BatchTitleEditor({
   const [batchData, setBatchData] = useState<Record<string, { title: string; extraRequirement: string }>>(() => {
     const initial: Record<string, { title: string; extraRequirement: string }> = {};
     tasks.forEach((task) => {
-      const articleData = getArticleData(task.id);
+      const savedTitle = getArticleTitle(task.id);
       initial[task.id] = {
-        title: articleData.title || `${task.city}相关文章`,
-        extraRequirement: articleData.extraRequirement || task.writing_suggestions || '', // 优先读取已保存的，其次任务默认
+        title: savedTitle || `${task.city}相关文章`,
+        extraRequirement: task.writing_suggestions || '', // 从任务读取默认额外要求
       };
     });
     return initial;
