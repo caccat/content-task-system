@@ -877,6 +877,10 @@ function AiGenerateSection({
     return true;
   });
   const failedTasks = tasks.filter(t => t.ai_status === 'failed');
+  // 其他状态（null, undefined 等）
+  const otherTasks = tasks.filter(t =>
+    !['pending', 'generating', 'completed', 'failed'].includes(t.ai_status || '')
+  );
 
   const getWebsiteLabels = (websiteIds: string[]) => {
     if (websites.length === 0) return [];
@@ -1367,6 +1371,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     return tasks.filter(task => {
       // 只显示AI模式的任务
       if (task.generation_mode !== 'ai') return false;
+      // 排除所有文章都是 ready/published 的任务（这些应该去待发布列表）
+      if (task.articles.length > 0 && task.articles.every(a => a.status === 'ready' || a.status === 'published')) return false;
       // 日期筛选
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
       if (filterCity && task.city !== filterCity) return false;
