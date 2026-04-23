@@ -1617,72 +1617,6 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     setRetryModalVisible(true);
   };
 
-  const confirmRetry = async () => {
-    const taskId = retryTaskId;
-    if (!taskId) return;
-    const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
-
-    const titleInput = document.getElementById('retry-title-input') as HTMLTextAreaElement;
-    const title = titleInput?.value?.trim();
-    
-    if (!title) {
-      message.warning('请输入文章标题');
-      return;
-    }
-
-    setRetryModalVisible(false);
-
-    try {
-      message.loading({ content: '正在重新生成...', key: 'retry' });
-      
-      // 更新状态为生成中
-      await updateAiStatus(taskId, 'generating');
-      refreshTasks();
-
-      // 调用 Edge Function，传递用户输入的标题
-      const response = await fetch('/api/generate-articles', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tasks: [{
-            city: task.city,
-            prompt_type: task.prompt_type,
-            writing_suggestions: task.writing_suggestions || '',
-            title: title,
-          }],
-        }),
-      });
-
-      const result = await response.json();
-
-      if (result.success || (result.results && result.results[0]?.success)) {
-        const articleContent = result.results?.[0]?.content;
-        if (articleContent && task.articles.length > 0) {
-          await supabase
-            .from('articles')
-            .update({
-              content: convertNewlinesToHtml(articleContent),
-              status: 'draft',
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', task.articles[0].id);
-        }
-        saveArticleTitle(taskId, title);
-        await updateAiStatus(taskId, 'completed');
-        message.success({ content: '重新生成成功！', key: 'retry' });
-      } else {
-        const errorMsg = result.error || result.results?.[0]?.error || '未知错误';
-        message.error({ content: `生成失败: ${errorMsg}`, key: 'retry' });
-        await updateAiStatus(taskId, 'failed');
-      }
-      
-      refreshTasks();
-    } catch {
-      message.error('操作失败');
-    }
-  };
-
   // 删除任务
   const handleDeleteTask = (task: TaskWithArticles, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1800,11 +1734,12 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                           })
                           .eq('id', task.articles[0].id);
                       }
-                      saveArticleTitle(retryTaskId, title);
+                      saveArticleData(retryTaskId, title, extraRequirement);
                       await updateAiStatus(retryTaskId, 'completed');
                       message.success({ content: '重新生成成功！', key: 'retry' });
                     } else {
                       const errorMsg = result.error || result.results?.[0]?.error || '未知错误';
+                      console.error('重新生成失败详情:', result);
                       message.error({ content: `生成失败: ${errorMsg}`, key: 'retry' });
                       await updateAiStatus(retryTaskId, 'failed');
                     }
