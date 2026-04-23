@@ -592,6 +592,8 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                   onCompositionEnd={handleCompositionEnd}
                   style={{
                     minHeight: 350,
+                    maxHeight: 'calc(100vh - 300px)',
+                    overflowY: 'auto',
                     padding: 16,
                     border: '1px solid #d9d9d9',
                     borderRadius: '0 0 4px 4px',
