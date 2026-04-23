@@ -451,10 +451,12 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   const [promptDetailVisible, setPromptDetailVisible] = useState(false);
   const [selectedPrompt, setSelectedPrompt] = useState<any>(null);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const originalContentRef = useRef<string>(''); // 记录打开时的原始内容
 
   // 自动保存草稿（防抖 2 秒）
   useEffect(() => {
-    if (editingArticle && content !== editingArticle.content) {
+    // 只要内容和原始内容不同，就保存
+    if (editingArticle && content !== originalContentRef.current) {
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
       }
@@ -475,7 +477,9 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
     setEditingArticle(article);
     // 优先读取自动保存的草稿，否则用数据库内容
     const draft = getArticleDraft(article.id);
-    setContent(draft || article.content);
+    const initialContent = draft || article.content;
+    setContent(initialContent);
+    originalContentRef.current = initialContent; // 更新原始内容
   };
 
   const handleSave = async () => {
