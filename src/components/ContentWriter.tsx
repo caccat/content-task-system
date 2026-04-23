@@ -450,7 +450,7 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   const [content, setContent] = useState('');
   const [promptDetailVisible, setPromptDetailVisible] = useState(false);
   const [selectedPrompt, setSelectedPrompt] = useState<any>(null);
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const originalContentRef = useRef<string>(''); // 记录打开时的原始内容
 
   // 自动保存草稿（防抖 2 秒）
