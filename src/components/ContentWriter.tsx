@@ -1316,7 +1316,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
             return;
           }
           
-          await generateWithAi([tasksToGenerate[0]], [title]);
+          await generateWithAi([tasksToGenerate[0]], [{ title, extraRequirement: '' }]);
         },
       });
     } else {
