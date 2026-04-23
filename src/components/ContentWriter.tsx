@@ -1755,8 +1755,15 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                       await updateAiStatus(retryTaskId, 'failed');
                     }
                     refreshTasks();
-                  } catch {
-                    message.error('操作失败');
+                  } catch (err) {
+                    console.error('重新生成异常:', err);
+                    message.error({ content: `操作失败: ${err instanceof Error ? err.message : '网络错误'}`, key: 'retry' });
+                    try {
+                      await updateAiStatus(retryTaskId, 'failed');
+                    } catch {
+                      console.error('更新状态失败也出错:', err);
+                    }
+                    refreshTasks();
                   }
                 }}
                 onCancel={() => setRetryModalVisible(false)}
