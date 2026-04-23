@@ -456,13 +456,20 @@ const StatusTag = ({ status, aiStatus }: { status: string; aiStatus?: string | n
 
 // 文章编辑器组件
 function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArticles; visible: boolean; onClose: () => void; settings: Record<string, string> }) {
-  const { articles, updateArticle, loading } = useArticles(task.id);
+  const { articles, updateArticle, loading, refreshArticles } = useArticles(task.id);
   const [editingArticle, setEditingArticle] = useState<Article | null>(null);
   const [content, setContent] = useState('');
   const [promptDetailVisible, setPromptDetailVisible] = useState(false);
   const [selectedPrompt, setSelectedPrompt] = useState<any>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const originalContentRef = useRef<string>(''); // 记录打开时的原始内容
+
+  // 当弹窗打开时，重新获取最新文章数据
+  useEffect(() => {
+    if (visible) {
+      refreshArticles();
+    }
+  }, [visible, refreshArticles]);
 
   // 自动保存草稿（防抖 2 秒）
   useEffect(() => {
