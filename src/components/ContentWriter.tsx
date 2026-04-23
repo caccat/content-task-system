@@ -442,6 +442,9 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
       if (feishuWebhook && notifyMode === 'immediate') {
         await sendFeishuNotification(feishuWebhook, task, article);
       }
+
+      // 成功后关闭弹窗
+      onClose();
     } catch {
       message.error('操作失败');
     }
