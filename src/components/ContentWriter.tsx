@@ -355,8 +355,15 @@ function RetryTaskEditor({
 }) {
   console.log('[调试] RetryTaskEditor 渲染，task.id:', task.id, 'task.city:', task.city);
   const articleData = getArticleData(task.id);
-  const [title, setTitle] = useState(() => articleData.title || `${task.city}相关文章`);
+  const [title, setTitle] = useState(articleData.title || `${task.city}相关文章`);
   const [extraRequirement, setExtraRequirement] = useState(articleData.extraRequirement);
+
+  // 当 task.id 变化时，重新从 localStorage 读取数据
+  useEffect(() => {
+    const data = getArticleData(task.id);
+    setTitle(data.title || `${task.city}相关文章`);
+    setExtraRequirement(data.extraRequirement);
+  }, [task.id, task.city]);
 
   return (
     <div style={{ padding: '16px 0' }}>
