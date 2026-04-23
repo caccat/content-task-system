@@ -471,6 +471,22 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
     }
   }, [visible, refreshArticles]);
 
+  // 当 articles 数据更新时，如果正在编辑的文章有变化，更新编辑内容
+  useEffect(() => {
+    if (editingArticle) {
+      const latestArticle = articles.find(a => a.id === editingArticle.id);
+      if (latestArticle && latestArticle.content !== editingArticle.content) {
+        // 文章内容已更新，提示用户
+        const draft = getArticleDraft(editingArticle.id);
+        if (!draft) {
+          // 没有草稿，直接使用最新内容
+          setContent(latestArticle.content);
+          originalContentRef.current = latestArticle.content;
+        }
+      }
+    }
+  }, [articles, editingArticle]);
+
   // 自动保存草稿（防抖 2 秒）
   useEffect(() => {
     // 只要内容和原始内容不同，就保存
@@ -492,10 +508,12 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   }, [content, editingArticle]);
 
   const handleEdit = (article: Article) => {
-    setEditingArticle(article);
+    // 从最新的 articles 列表中获取数据，确保使用的是最新内容
+    const latestArticle = articles.find(a => a.id === article.id) || article;
+    setEditingArticle(latestArticle);
     // 优先读取自动保存的草稿，否则用数据库内容
     const draft = getArticleDraft(article.id);
-    const initialContent = draft || article.content;
+    const initialContent = draft || latestArticle.content;
     setContent(initialContent);
     originalContentRef.current = initialContent; // 更新原始内容
   };
