@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+。import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 // DeepSeek API 配置
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
@@ -145,13 +145,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           continue;
         }
 
-        // 生成文章（传递用户输入的标题）
+        // 生成文章（传递用户输入的标题和额外要求）
         const content = await generateArticle(
           task.city,
           promptContent,
           task.writing_suggestions,
           apiKey,
-          task.title // 用户输入的标题
+          task.title, // 用户输入的标题
+          task.extra_requirement // 用户输入的额外要求
         );
         
         results.push({
