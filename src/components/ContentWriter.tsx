@@ -39,6 +39,7 @@ function saveArticleData(taskId: string, title: string, extraRequirement: string
     const data = stored ? JSON.parse(stored) : {};
     data[taskId] = { title, extraRequirement };
     localStorage.setItem(ARTICLE_DATA_KEY, JSON.stringify(data));
+    console.log('[调试] 保存 localStorage，taskId:', taskId, 'title:', title, 'extraRequirement:', extraRequirement);
   } catch (e) {
     console.error('保存数据失败:', e);
   }
@@ -49,6 +50,7 @@ function getArticleData(taskId: string): { title: string | null; extraRequiremen
     const stored = localStorage.getItem(ARTICLE_DATA_KEY);
     if (stored) {
       const data = JSON.parse(stored);
+      console.log('[调试] 读取 localStorage，taskId:', taskId, '数据:', data[taskId]);
       return {
         title: data[taskId]?.title || null,
         extraRequirement: data[taskId]?.extraRequirement || ''
@@ -57,6 +59,7 @@ function getArticleData(taskId: string): { title: string | null; extraRequiremen
   } catch (e) {
     console.error('读取数据失败:', e);
   }
+  console.log('[调试] localStorage 中没有找到 taskId:', taskId);
   return { title: null, extraRequirement: '' };
 }
 
@@ -350,6 +353,7 @@ function RetryTaskEditor({
   onConfirm: (title: string, extraRequirement: string) => void;
   onCancel: () => void;
 }) {
+  console.log('[调试] RetryTaskEditor 渲染，task.id:', task.id, 'task.city:', task.city);
   const articleData = getArticleData(task.id);
   const [title, setTitle] = useState(() => articleData.title || `${task.city}相关文章`);
   const [extraRequirement, setExtraRequirement] = useState(articleData.extraRequirement);
