@@ -4,8 +4,15 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = 'deepseek-chat';
 
-// 生成单篇文章（新增 title 参数）
-async function generateArticle(city: string, promptContent: string, writingSuggestions: string, apiKey: string, title?: string): Promise<string> {
+// 生成单篇文章（新增 title 和 extraRequirement 参数）
+async function generateArticle(
+  city: string, 
+  promptContent: string, 
+  writingSuggestions: string, 
+  apiKey: string, 
+  title?: string,
+  extraRequirement?: string
+): Promise<string> {
   if (!promptContent || promptContent.trim() === '') {
     throw new Error('提示词内容为空，请先在文章提示词管理中填写提示词内容');
   }
@@ -15,6 +22,11 @@ async function generateArticle(city: string, promptContent: string, writingSugge
     .replace(/\{\{title\}\}/g, title || '')
     .replace(/\{\{city\}\}/g, city)
     .replace(/\{\{suggestions\}\}/g, writingSuggestions || '请根据城市特点创作一篇优质内容');
+
+  // 如果有额外要求，追加到提示词后面
+  if (extraRequirement && extraRequirement.trim()) {
+    prompt = prompt.trim() + '\n\n额外要求：' + extraRequirement.trim();
+  }
 
   const response = await fetch(DEEPSEEK_API_URL, {
     method: 'POST',

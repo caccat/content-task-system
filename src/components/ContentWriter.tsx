@@ -62,21 +62,81 @@ function BatchTitleEditor({
   onConfirm 
 }: { 
   tasks: TaskWithArticles[]; 
-  onConfirm: (titles: string[]) => void;
+  onConfirm: (data: { title: string; extraRequirement: string }[])=> void;
 }) {
-  const [batchTitles, setBatchTitles] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {};
+  // 存储每个任务的标题和额外要求
+  const [batchData, setBatchData] = useState<Record<string, { title: string; extraRequirement: string }>>(() => {
+    const initial: Record<string, { title: string; extraRequirement: string }> = {};
     tasks.forEach((task) => {
-      const saved = getArticleTitle(task.id);
-      initial[task.id] = saved || `${task.city}相关文章`;
+      const savedTitle = getArticleTitle(task.id);
+      initial[task.id] = {
+        title: savedTitle || `${task.city}相关文章`,
+        extraRequirement: task.writing_suggestions || '', // 从任务读取默认额外要求
+      };
     });
     return initial;
   });
 
+  // 更新某个任务的数据
+  const updateData = (taskId: string, field: 'title' | 'extraRequirement', value: string) => {
+    setBatchData(prev => ({
+      ...prev,
+      [taskId]: { ...prev[taskId], [field]: value }
+    }));
+  };
+
+  // 复制当前行的额外要求
+  const copyExtraRequirement = (taskId: string) => {
+    const text = batchData[taskId]?.extraRequirement || '';
+    navigator.clipboard.writeText(text);
+    message.success('已复制额外要求');
+  };
+
+  // 清空当前行的额外要求
+  const clearExtraRequirement = (taskId: string) => {
+    updateData(taskId, 'extraRequirement', '');
+  };
+
+  // 粘贴额外要求到当前行
+  const pasteExtraRequirement = async (taskId: string) => {
+    try {
+      const text = await navigator.clipboard.readText();
+      updateData(taskId, 'extraRequirement', text);
+      message.success('已粘贴额外要求');
+    } catch {
+      message.error('粘贴失败');
+    }
+  };
+
+  // 将第一行的额外要求应用到所有行
+  const applyToAll = () => {
+    const firstTaskId = tasks[0]?.id;
+    if (!firstTaskId) return;
+    const firstExtra = batchData[firstTaskId]?.extraRequirement || '';
+    if (!firstExtra) return;
+    
+    const updated = { ...batchData };
+    tasks.forEach(task => {
+      updated[task.id] = { ...updated[task.id], extraRequirement: firstExtra };
+    });
+    setBatchData(updated);
+    message.success('已应用到所有行');
+  };
+
+  // 检查所有行的额外要求是否相同
+  const isAllExtraSame = () => {
+    if (tasks.length <= 1) return true;
+    const firstExtra = batchData[tasks[0]?.id]?.extraRequirement || '';
+    return tasks.every(t => (batchData[t.id]?.extraRequirement || '') === firstExtra);
+  };
+
+  const firstTaskId = tasks[0]?.id;
+  const showApplyToAll = firstTaskId && batchData[firstTaskId]?.extraRequirement;
+
   return (
-    <div style={{ padding: '8px 0', maxHeight: 400, overflowY: 'auto' }}>
+    <div style={{ padding: '8px 0', maxHeight: 500, overflowY: 'auto' }}>
       <p style={{ marginBottom: 12, color: '#666' }}>
-        请为每个任务输入标题（共 {tasks.length} 个任务）：
+        请为每个任务输入标题和额外要求（共 {tasks.length} 个任务）：
       </p>
       <div style={{ border: '1px solid #f0f0f0', borderRadius: 6 }}>
         {/* 表头 */}
@@ -88,8 +148,10 @@ function BatchTitleEditor({
           fontWeight: 500,
           fontSize: 13
         }}>
-          <div style={{ width: 120 }}>城市</div>
-          <div style={{ flex: 1 }}>标题</div>
+          <div style={{ width: 80 }}>城市</div>
+          <div style={{ width: 180, flex: 'none' }}>标题</div>
+          <div style={{ flex: 1 }}>额外要求</div>
+          <div style={{ width: 160, flex: 'none', textAlign: 'center' }}>操作</div>
         </div>
         {/* 表格行 */}
         {tasks.map((task, idx) => (
@@ -99,16 +161,52 @@ function BatchTitleEditor({
             borderBottom: idx < tasks.length - 1 ? '1px solid #f0f0f0' : 'none',
             alignItems: 'center'
           }}>
-            <div style={{ width: 120, fontWeight: 500, color: '#1890ff' }}>
+            <div style={{ width: 80, fontWeight: 500, color: '#1890ff' }}>
               {task.city}
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ width: 180, flex: 'none' }}>
               <Input
-                value={batchTitles[task.id] || ''}
-                onChange={(e) => setBatchTitles(prev => ({ ...prev, [task.id]: e.target.value }))}
+                value={batchData[task.id]?.title || ''}
+                onChange={(e) => updateData(task.id, 'title', e.target.value)}
                 placeholder="输入文章标题"
                 size="small"
               />
+            </div>
+            <div style={{ flex: 1, marginLeft: 8 }}>
+              <Input.TextArea
+                value={batchData[task.id]?.extraRequirement || ''}
+                onChange={(e) => updateData(task.id, 'extraRequirement', e.target.value)}
+                placeholder="输入额外要求（可选）"
+                size="small"
+                rows={1}
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div style={{ width: 160, flex: 'none', textAlign: 'right' }}>
+              <Space size="small">
+                <Button size="small" onClick={() => copyExtraRequirement(task.id)}>
+                  复制
+                </Button>
+                {idx === 0 ? (
+                  showApplyToAll ? (
+                    <Button 
+                      size="small" 
+                      type={isAllExtraSame() ? 'default' : 'primary'}
+                      onClick={applyToAll}
+                      disabled={isAllExtraSame()}
+                    >
+                      {isAllExtraSame() ? '已同步 ✓' : '应用到所有'}
+                    </Button>
+                  ) : null
+                ) : (
+                  <Button size="small" onClick={() => pasteExtraRequirement(task.id)}>
+                    粘贴
+                  </Button>
+                )}
+                <Button size="small" danger onClick={() => clearExtraRequirement(task.id)}>
+                  清空
+                </Button>
+              </Space>
             </div>
           </div>
         ))}
@@ -118,12 +216,15 @@ function BatchTitleEditor({
         block 
         style={{ marginTop: 16 }}
         onClick={() => {
-          const titles = tasks.map(t => batchTitles[t.id]?.trim() || `${t.city}相关文章`);
-          if (titles.some(t => !t)) {
+          const data = tasks.map(t => ({
+            title: batchData[t.id]?.title?.trim() || `${t.city}相关文章`,
+            extraRequirement: batchData[t.id]?.extraRequirement?.trim() || '',
+          }));
+          if (data.some(d => !d.title)) {
             message.warning('请确保所有任务都填写了标题');
             return;
           }
-          onConfirm(titles);
+          onConfirm(data);
         }}
       >
         开始生成
@@ -1226,13 +1327,13 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   };
 
   // 批量生成确认处理
-  const handleBatchGenerate = async (titles: string[]) => {
+  const handleBatchGenerate = async (data: { title: string; extraRequirement: string }[]) => {
     setBatchModalVisible(false);
-    await generateWithAi(batchTasks, titles);
+    await generateWithAi(batchTasks, data);
   };
   
   // 实际执行 AI 生成的函数
-  const generateWithAi = async (tasksToGenerate: TaskWithArticles[], titles: string[]) => {
+  const generateWithAi = async (tasksToGenerate: TaskWithArticles[], batchData: { title: string; extraRequirement: string }[]) => {
     try {
       // 1. 先更新任务状态为 AI 模式
       const taskIds = tasksToGenerate.map(t => t.id);
@@ -1245,14 +1346,15 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
       message.loading({ content: `正在调用 AI 生成 ${tasksToGenerate.length} 篇文章...`, key: 'ai-generate' });
       
       const generatePromises = tasksToGenerate.map(async (task, index) => {
-        const userTitle = titles[index] || `${task.city} - ${dayjs(task.deadline).format('MM月DD日')}文章`;
+        const userTitle = batchData[index]?.title || `${task.city} - ${dayjs(task.deadline).format('MM月DD日')}文章`;
+        const extraRequirement = batchData[index]?.extraRequirement || '';
         
         try {
           // 更新状态为生成中
           await updateAiStatus(task.id, 'generating');
           refreshTasks();
 
-          // 调用 Edge Function，传递用户输入的标题
+          // 调用 Edge Function，传递用户输入的标题和额外要求
           const response = await fetch('/api/generate-articles', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1261,7 +1363,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                 city: task.city,
                 prompt_type: task.prompt_type,
                 writing_suggestions: task.writing_suggestions || '',
-                title: userTitle, // 使用用户输入的标题
+                title: userTitle, // 用户输入的标题
+                extra_requirement: extraRequirement, // 用户输入的额外要求
               }],
             }),
           });
