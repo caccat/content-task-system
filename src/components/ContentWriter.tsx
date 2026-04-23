@@ -1770,6 +1770,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                           })
                           .eq('id', task.articles[0].id);
                       }
+                      // 清除旧草稿，因为文章内容已经更新
+                      if (task.articles.length > 0) {
+                        clearArticleDraft(task.articles[0].id);
+                      }
                       saveArticleData(retryTaskId, title, extraRequirement);
                       await updateAiStatus(retryTaskId, 'completed');
                       message.success({ content: '重新生成成功！', key: 'retry' });
