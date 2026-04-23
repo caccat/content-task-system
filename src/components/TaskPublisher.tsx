@@ -180,16 +180,16 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
   const [filterStatus, setFilterStatus] = useState<string | undefined>(defaultStatus);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
 
-  // 计算逾期任务（截止日期早于今天且有待发布文章的任务）
+  // 计算逾期任务（截止日期早于今天且有未完成任务）
   const overdueTasksInfo = useMemo(() => {
     const today = dayjs().startOf('day');
     const overdueTasks = tasks.filter(task => {
       const deadline = dayjs(task.deadline).startOf('day');
       // 截止日期早于今天
       if (!deadline.isBefore(today)) return false;
-      // 有待发布的文章
-      const hasReadyArticle = task.articles.some(a => a.status === 'ready');
-      return hasReadyArticle;
+      // 有未发布的文章
+      const hasIncompleteArticle = task.articles.some(a => a.status !== 'published');
+      return hasIncompleteArticle;
     });
 
     // 按逾期日期分组
