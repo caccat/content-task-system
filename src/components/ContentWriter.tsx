@@ -29,31 +29,43 @@ function convertNewlinesToHtml(text: string): string {
   return htmlParagraphs.join('');
 }
 
-// localStorage 存取标题（仅限用户浏览器）
-const ARTICLE_TITLES_KEY = 'content_task_article_titles';
+// localStorage 存取标题和额外要求（仅限用户浏览器）
+const ARTICLE_DATA_KEY = 'content_task_article_data';
 
-function saveArticleTitle(taskId: string, title: string) {
+function saveArticleData(taskId: string, title: string, extraRequirement: string = '') {
   try {
-    const stored = localStorage.getItem(ARTICLE_TITLES_KEY);
-    const titles = stored ? JSON.parse(stored) : {};
-    titles[taskId] = title;
-    localStorage.setItem(ARTICLE_TITLES_KEY, JSON.stringify(titles));
+    const stored = localStorage.getItem(ARTICLE_DATA_KEY);
+    const data = stored ? JSON.parse(stored) : {};
+    data[taskId] = { title, extraRequirement };
+    localStorage.setItem(ARTICLE_DATA_KEY, JSON.stringify(data));
   } catch (e) {
-    console.error('保存标题失败:', e);
+    console.error('保存数据失败:', e);
   }
 }
 
-function getArticleTitle(taskId: string): string | null {
+function getArticleData(taskId: string): { title: string | null; extraRequirement: string } {
   try {
-    const stored = localStorage.getItem(ARTICLE_TITLES_KEY);
+    const stored = localStorage.getItem(ARTICLE_DATA_KEY);
     if (stored) {
-      const titles = JSON.parse(stored);
-      return titles[taskId] || null;
+      const data = JSON.parse(stored);
+      return {
+        title: data[taskId]?.title || null,
+        extraRequirement: data[taskId]?.extraRequirement || ''
+      };
     }
   } catch (e) {
-    console.error('读取标题失败:', e);
+    console.error('读取数据失败:', e);
   }
-  return null;
+  return { title: null, extraRequirement: '' };
+}
+
+// 兼容旧版本
+function saveArticleTitle(taskId: string, title: string) {
+  saveArticleData(taskId, title, '');
+}
+
+function getArticleTitle(taskId: string): string | null {
+  return getArticleData(taskId).title;
 }
 
 // 批量生成标题编辑器子组件
@@ -243,8 +255,9 @@ function SingleTaskEditor({
   onConfirm: (title: string, extraRequirement: string) => void;
   onCancel: () => void;
 }) {
-  const [title, setTitle] = useState(() => getArticleTitle(task.id) || `${task.city}相关文章`);
-  const [extraRequirement, setExtraRequirement] = useState('');
+  const articleData = getArticleData(task.id);
+  const [title, setTitle] = useState(() => articleData.title || `${task.city}相关文章`);
+  const [extraRequirement, setExtraRequirement] = useState(articleData.extraRequirement);
 
   return (
     <div style={{ padding: '16px 0' }}>
@@ -298,8 +311,9 @@ function RetryTaskEditor({
   onConfirm: (title: string, extraRequirement: string) => void;
   onCancel: () => void;
 }) {
-  const [title, setTitle] = useState(() => getArticleTitle(task.id) || `${task.city}相关文章`);
-  const [extraRequirement, setExtraRequirement] = useState('');
+  const articleData = getArticleData(task.id);
+  const [title, setTitle] = useState(() => articleData.title || `${task.city}相关文章`);
+  const [extraRequirement, setExtraRequirement] = useState(articleData.extraRequirement);
 
   return (
     <div style={{ padding: '16px 0' }}>
@@ -1469,8 +1483,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                 })
                 .eq('id', task.articles[0].id);
             }
-            // 保存标题到浏览器 localStorage
-            saveArticleTitle(task.id, userTitle);
+            // 保存标题和额外要求到浏览器 localStorage
+            saveArticleData(task.id, userTitle, extraRequirement);
             // 更新状态为已完成
             await updateAiStatus(task.id, 'completed');
           } else {
