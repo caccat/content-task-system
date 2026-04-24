@@ -203,8 +203,8 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
       
       // 统计待发布和未生成
       const ready = task.articles.filter(a => a.status === 'ready').length;
-      // 未生成 = 需要生成的总数量 - 已生成的文章数量
-      const generatedCount = task.articles.length;
+      // 已生成 = 状态为 ready 或 published 的文章数量（draft 不算真正生成）
+      const generatedCount = task.articles.filter(a => a.status === 'ready' || a.status === 'published').length;
       const ungeneratedCount = Math.max(0, task.quantity - generatedCount);
       groupedByDate[dateKey].readyCount += ready;
       groupedByDate[dateKey].ungeneratedCount += ungeneratedCount;
@@ -373,28 +373,29 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
           }}
           bodyStyle={{ padding: '12px 24px' }}
         >
-          <Space wrap align="center">
-            <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 16 }} />
-            <Text style={{ fontSize: 14, color: '#d4380d' }}>
-              逾期任务
-              {Object.entries(overdueTasksInfo).map(([date, info], idx) => (
-                <span key={date}>
-                  {idx > 0 && '，'}
+          <Space direction="vertical" size={4}>
+            <Space align="center">
+              <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 16 }} />
+              <Text style={{ fontSize: 14, color: '#d4380d', fontWeight: 500 }}>逾期任务</Text>
+            </Space>
+            {Object.entries(overdueTasksInfo).map(([date, info]) => (
+              <Space key={date} align="center">
+                <Text style={{ fontSize: 14, color: '#d4380d' }}>
                   {date} 有{' '}
                   {info.readyCount > 0 && <Text strong style={{ color: '#fa8c16' }}>{info.readyCount} 个待发布</Text>}
                   {info.readyCount > 0 && info.ungeneratedCount > 0 && '，'}
                   {info.ungeneratedCount > 0 && <Text strong style={{ color: '#ff4d4f' }}>{info.ungeneratedCount} 个未生成</Text>}
-                  <Button
-                    type="link"
-                    size="small"
-                    onClick={() => setSelectedDate(info.date)}
-                    style={{ padding: '0 4px', height: 'auto', marginLeft: 8 }}
-                  >
-                    [回到 {date}]
-                  </Button>
-                </span>
-              ))}
-            </Text>
+                </Text>
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => setSelectedDate(info.date)}
+                  style={{ padding: '0 4px', height: 'auto' }}
+                >
+                  回到 {date}
+                </Button>
+              </Space>
+            ))}
           </Space>
         </Card>
       )}
