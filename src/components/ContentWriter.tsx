@@ -1473,7 +1473,6 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
       
       // 统计未生成和待发布
       const ready = task.articles.filter(a => a.status === 'ready').length;
-      const draft = task.articles.filter(a => a.status === 'draft').length;
       // 未生成 = 需要生成的总数量 - 已生成的文章数量（ready + published）
       // 如果 task.articles.length >= task.quantity，说明全部生成或超额生成，未生成为0
       // 否则未生成 = task.quantity - task.articles.length
@@ -1481,6 +1480,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
       const ungeneratedCount = Math.max(0, task.quantity - generatedCount);
       groupedByDate[dateKey].ungeneratedCount += ungeneratedCount;
       groupedByDate[dateKey].readyCount += ready;
+      
+      console.log('[逾期统计]', task.city, 'quantity:', task.quantity, 'articles.length:', task.articles.length, 'ready:', ready, 'ungenerated:', ungeneratedCount);
     });
 
     return groupedByDate;
