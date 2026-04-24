@@ -203,9 +203,11 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
       
       // 统计待发布和未生成
       const ready = task.articles.filter(a => a.status === 'ready').length;
-      const ungenerated = task.quantity - task.articles.filter(a => a.status !== 'draft').length;
+      // 未生成 = 需要生成的总数量 - 已生成的文章数量
+      const generatedCount = task.articles.length;
+      const ungeneratedCount = Math.max(0, task.quantity - generatedCount);
       groupedByDate[dateKey].readyCount += ready;
-      groupedByDate[dateKey].ungeneratedCount += ungenerated > 0 ? ungenerated : task.quantity;
+      groupedByDate[dateKey].ungeneratedCount += ungeneratedCount;
     });
 
     return groupedByDate;
