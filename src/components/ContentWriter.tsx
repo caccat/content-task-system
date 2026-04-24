@@ -1481,7 +1481,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
       groupedByDate[dateKey].ungeneratedCount += ungeneratedCount;
       groupedByDate[dateKey].readyCount += ready;
       
-      console.log('[逾期统计]', task.city, 'quantity:', task.quantity, 'articles.length:', task.articles.length, 'ready:', ready, 'ungenerated:', ungeneratedCount);
+      console.log('[逾期统计]', task.city, 'deadline:', task.deadline, 'quantity:', task.quantity, 'articles.length:', task.articles.length, 'ready:', ready, 'ungenerated:', ungeneratedCount, 'articles:', task.articles.map(a => a.status));
     });
 
     return groupedByDate;
