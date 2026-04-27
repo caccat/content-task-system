@@ -924,9 +924,20 @@ function ManualGenerateSection({
   return (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text type="secondary">
-          共 {tasks.length} 个任务{tasks.filter(t => t.articles.some(a => a.content)).length > 0 && `（其中 ${tasks.filter(t => t.articles.some(a => a.content)).length} 个已有内容）`}
-        </Text>
+        <Space>
+          <Text type="secondary">
+            共 {tasks.length} 个任务{tasks.filter(t => t.articles.some(a => a.content)).length > 0 && `（其中 ${tasks.filter(t => t.articles.some(a => a.content)).length} 个已有内容）`}
+          </Text>
+          {tasks.length > 0 && (
+            <Button
+              type="link"
+              size="small"
+              onClick={() => setSelectedRowKeys(selectedRowKeys.length === tasks.length ? [] : tasks.map(t => t.id))}
+            >
+              {selectedRowKeys.length === tasks.length ? '取消全选' : '全选'}
+            </Button>
+          )}
+        </Space>
         {selectedRowKeys.length > 0 && (
           <Button
             type="primary"
