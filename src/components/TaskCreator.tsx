@@ -598,6 +598,23 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
                 >
                   粘贴
                 </Button>
+                {totalCount > 0 && (
+                  <Button 
+                    type="link" 
+                    size="small"
+                    danger
+                    style={{ padding: 0, fontSize: 12 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const newConfigs = { ...batchConfigs };
+                      delete newConfigs[`${record.id}-${type.id}`];
+                      setBatchConfigs(newConfigs);
+                      message.success('已清空');
+                    }}
+                  >
+                    清空
+                  </Button>
+                )}
               </Space>
             </Space>
           </div>
