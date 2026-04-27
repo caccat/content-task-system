@@ -1912,10 +1912,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                       {info.readyCount > 0 && <Text strong style={{ color: '#fa8c16' }}>{info.readyCount} 个待发布</Text>}
                     </Text>
                     <Button
-                      type="link"
+                      type="primary"
                       size="small"
                       onClick={() => setSelectedDate(info.date)}
-                      style={{ padding: '0 4px', height: 'auto' }}
+                      style={{ borderRadius: 16 }}
                     >
                       回到 {date}
                     </Button>

@@ -387,10 +387,10 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
                   {info.ungeneratedCount > 0 && <Text strong style={{ color: '#ff4d4f' }}>{info.ungeneratedCount} 个未生成</Text>}
                 </Text>
                 <Button
-                  type="link"
+                  type="primary"
                   size="small"
                   onClick={() => setSelectedDate(info.date)}
-                  style={{ padding: '0 4px', height: 'auto' }}
+                  style={{ borderRadius: 16 }}
                 >
                   回到 {date}
                 </Button>
