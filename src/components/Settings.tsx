@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, message, Typography, Space, Divider, Radio } from 'antd';
-import { SaveOutlined, BellOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, message, Typography, Space, Divider, Radio, Switch, TimePicker } from 'antd';
+import { SaveOutlined, BellOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useSettings } from '../hooks/useSettings';
+import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 
@@ -10,6 +11,8 @@ export default function Settings() {
   const { getSetting, setSetting, loading } = useSettings();
   const [saving, setSaving] = useState(false);
   const [notifyMode, setNotifyMode] = useState('immediate');
+  const [dailyNotificationEnabled, setDailyNotificationEnabled] = useState(false);
+  const [dailyNotificationTime, setDailyNotificationTime] = useState(dayjs('17:30', 'HH:mm'));
 
   // 加载保存的设置
   useEffect(() => {
@@ -17,6 +20,9 @@ export default function Settings() {
       feishu_webhook: getSetting('feishu_webhook', ''),
     });
     setNotifyMode(getSetting('feishu_notify_mode', 'immediate'));
+    setDailyNotificationEnabled(getSetting('daily_notification_enabled', 'false') === 'true');
+    const savedTime = getSetting('daily_notification_time', '17:30');
+    setDailyNotificationTime(dayjs(savedTime, 'HH:mm'));
   }, [form, getSetting]);
 
   const handleSave = async (values: any) => {
@@ -70,6 +76,57 @@ export default function Settings() {
     }
   };
 
+  // 切换每日通知开关
+  const handleDailyNotificationToggle = async (checked: boolean) => {
+    try {
+      await setSetting('daily_notification_enabled', checked.toString());
+      setDailyNotificationEnabled(checked);
+      message.success(`每日通知已${checked ? '开启' : '关闭'}`);
+    } catch {
+      message.error('保存失败');
+    }
+  };
+
+  // 保存每日通知时间
+  const handleDailyNotificationTimeChange = async (time: dayjs.Dayjs | null) => {
+    if (!time) return;
+    const timeStr = time.format('HH:mm');
+    try {
+      await setSetting('daily_notification_time', timeStr);
+      setDailyNotificationTime(time);
+      message.success(`通知时间已设置为 ${timeStr}`);
+    } catch {
+      message.error('保存失败');
+    }
+  };
+
+  // 测试每日通知
+  const testDailyNotification = async () => {
+    const webhook = form.getFieldValue('feishu_webhook');
+    if (!webhook) {
+      message.warning('请先填写 Webhook 地址');
+      return;
+    }
+
+    try {
+      // 从环境变量获取 API URL（Vercel 会自动设置）
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const response = await fetch(`${apiUrl}/api/daily-notification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (response.ok) {
+        message.success('测试消息已发送，请检查飞书群');
+      } else {
+        const data = await response.json();
+        message.error(data.error || '发送失败');
+      }
+    } catch (error) {
+      message.error('发送失败，请检查网络连接');
+    }
+  };
+
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '24px' }}>
       <Card title="系统设置" bordered={false} loading={loading}>
@@ -114,6 +171,41 @@ export default function Settings() {
                 <Radio value="batch">批量通知（每天汇总发送一次）</Radio>
               </Radio.Group>
             </Form.Item>
+
+            <Divider />
+
+            <div style={{ background: '#f0f5ff', padding: '16px', borderRadius: '8px', border: '1px solid #adc6ff' }}>
+              <Space style={{ marginBottom: 12 }}>
+                <ClockCircleOutlined style={{ fontSize: 18, color: '#1677ff' }} />
+                <Text strong style={{ fontSize: 16 }}>每日定时通知</Text>
+                <Switch
+                  checked={dailyNotificationEnabled}
+                  onChange={handleDailyNotificationToggle}
+                  checkedChildren="开"
+                  unCheckedChildren="关"
+                />
+              </Space>
+              {dailyNotificationEnabled && (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Text type="secondary">
+                    设置每日自动发送任务统计到飞书群
+                  </Text>
+                  <Space>
+                    <Text>通知时间：</Text>
+                    <TimePicker
+                      value={dailyNotificationTime}
+                      onChange={handleDailyNotificationTimeChange}
+                      format="HH:mm"
+                      placeholder="选择时间"
+                      minuteStep={5}
+                    />
+                    <Button onClick={testDailyNotification}>
+                      测试通知
+                    </Button>
+                  </Space>
+                </Space>
+              )}
+            </div>
 
             <Form.Item>
               <Space>
