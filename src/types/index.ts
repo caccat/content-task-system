@@ -18,6 +18,9 @@ export interface Article {
   notes?: string | null;
 }
 
+// 网站状态类型
+export type WebsiteStatus = 'round1_test' | 'round2_test' | 'approved';
+
 export interface Website {
   id: string;
   created_at: string;
@@ -25,7 +28,16 @@ export interface Website {
   name: string;
   platform: string;
   price: number;
+  status: WebsiteStatus;
+  status_updated_at: string;
 }
+
+// 网站状态配置
+export const WEBSITE_STATUS_OPTIONS = [
+  { label: '一轮测试', value: 'round1_test' },
+  { label: '二轮测试', value: 'round2_test' },
+  { label: '已入库', value: 'approved' },
+] as const;
 
 // 文章示例类型
 export interface ArticleExample {

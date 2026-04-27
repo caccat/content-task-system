@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../supabase';
-import type { Website } from '../types';
+import type { Website, WebsiteStatus } from '../types';
 
 export function useWebsites() {
   const [websites, setWebsites] = useState<Website[]>([]);
@@ -43,9 +43,13 @@ export function useWebsites() {
   }, [fetchWebsites]);
 
   const createWebsite = async (websiteData: Omit<Website, 'id' | 'created_at' | 'updated_at'>) => {
+    const now = new Date().toISOString();
     const { data, error } = await supabase
       .from('websites')
-      .insert(websiteData as any)
+      .insert({
+        ...websiteData,
+        status_updated_at: now,
+      } as any)
       .select()
       .single();
 
@@ -72,6 +76,26 @@ export function useWebsites() {
     await fetchWebsites();
   };
 
+  // 更新网站状态（同时更新时间戳）
+  const updateWebsiteStatus = async (id: string, status: WebsiteStatus) => {
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('websites')
+      .update({ 
+        status, 
+        status_updated_at: now,
+        updated_at: now,
+      })
+      .eq('id', id);
+
+    if (error) {
+      console.error('更新网站状态失败:', error);
+      throw error;
+    }
+
+    await fetchWebsites();
+  };
+
   const deleteWebsite = async (id: string) => {
     const { error } = await supabase
       .from('websites')
@@ -92,6 +116,7 @@ export function useWebsites() {
     error,
     createWebsite,
     updateWebsite,
+    updateWebsiteStatus,
     deleteWebsite,
     refreshWebsites: fetchWebsites,
   };
