@@ -1220,16 +1220,33 @@ function CreatedTasksList() {
     if (!articleEditModal.article) return;
     
     try {
-      const { error } = await supabase
+      const article = articleEditModal.article;
+      
+      // 更新文章（保留原字段）
+      const { error: articleError } = await supabase
         .from('articles')
         .update({
           website: values.website || null,
           notes: values.notes || null,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', articleEditModal.article.id);
+        .eq('id', article.id);
 
-      if (error) throw error;
+      if (articleError) throw articleError;
+
+      // 同时更新关联任务的任务级网站和写作建议
+      if (article.task_id) {
+        const { error: taskError } = await supabase
+          .from('tasks')
+          .update({
+            websites: values.website ? [values.website] : [],
+            writing_suggestions: values.notes || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', article.task_id);
+        
+        if (taskError) throw taskError;
+      }
 
       message.success('修改成功');
       setArticleEditModal({ visible: false, article: null });

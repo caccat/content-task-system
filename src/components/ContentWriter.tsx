@@ -608,14 +608,9 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
           </div>
           <div>
             <Text strong>发布网站：</Text>
-            {/* 优先显示文章自己的网站，如果没有则显示任务默认网站 */}
-            {(() => {
-              const articleWebsites = articles.filter(a => a.website).map(a => a.website!);
-              const displayWebsites = articleWebsites.length > 0 ? articleWebsites : task.websites;
-              return getWebsiteLabels(displayWebsites).map((site, idx) => (
-                <Tag key={idx} color="green">{site}</Tag>
-              ));
-            })()}
+            {getWebsiteLabels(task.websites).map((site, idx) => (
+              <Tag key={idx} color="green">{site}</Tag>
+            ))}
           </div>
           <div>
             <Text strong>提示词类型：</Text>
@@ -693,18 +688,8 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
               avatar={<Badge count={index + 1} style={{ backgroundColor: '#1890ff' }} />}
               title={`文章 ${index + 1}`}
               description={
-                <Space direction="vertical" size={4}>
-                  <Space>
-                    <StatusTag status={article.status} />
-                    {article.website && (
-                      <Tag color="blue">{article.website}</Tag>
-                    )}
-                  </Space>
-                  {article.notes && (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      备注: {article.notes}
-                    </Text>
-                  )}
+                <Space>
+                  <StatusTag status={article.status} />
                   {article.content && (
                     <Text type="secondary" ellipsis style={{ maxWidth: 300 }}>
                       {article.content.substring(0, 50)}...
