@@ -21,7 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 获取飞书 Webhook
     const webhookResponse = await fetch(
-      `${supabaseUrl}/rest/v1/app_settings?key=eq.feishu_webhook&select=value`,
+      `${supabaseUrl}/rest/v1/settings?key=eq.feishu_webhook&select=value`,
       {
         headers: {
           'apikey': supabaseKey,
@@ -38,7 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 检查是否启用了每日通知
     const notifyResponse = await fetch(
-      `${supabaseUrl}/rest/v1/app_settings?key=eq.daily_notification_enabled&select=value`,
+      `${supabaseUrl}/rest/v1/settings?key=eq.daily_notification_enabled&select=value`,
       {
         headers: {
           'apikey': supabaseKey,
@@ -55,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 获取通知时间设置
     const timeResponse = await fetch(
-      `${supabaseUrl}/rest/v1/app_settings?key=eq.daily_notification_time&select=value`,
+      `${supabaseUrl}/rest/v1/settings?key=eq.daily_notification_time&select=value`,
       {
         headers: {
           'apikey': supabaseKey,
