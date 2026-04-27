@@ -7,9 +7,6 @@ import { WEBSITE_STATUS_OPTIONS } from '../types';
 
 export default function WebsiteManager() {
   const { websites, loading, createWebsite, updateWebsite, updateWebsiteStatus, deleteWebsite } = useWebsites();
-
-export default function WebsiteManager() {
-  const { websites, loading, createWebsite, updateWebsite, updateWebsiteStatus } = useWebsites();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingData, setEditingData] = useState<Partial<Website>>({});
   const [isAdding, setIsAdding] = useState(false);
