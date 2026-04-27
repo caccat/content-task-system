@@ -67,6 +67,14 @@ CREATE TABLE articles (
   published_by TEXT
 );
 
+-- 创建设置表
+CREATE TABLE settings (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  key TEXT UNIQUE NOT NULL,
+  value TEXT,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- 创建索引
 CREATE INDEX idx_articles_task_id ON articles(task_id);
 CREATE INDEX idx_tasks_status ON tasks(status);

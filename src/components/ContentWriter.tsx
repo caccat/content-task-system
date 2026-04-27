@@ -1452,7 +1452,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   // defaultStatus 决定显示模式：draft=未生成(人工/AI双Tab), ready=待发布, completed=已完成
   const [activeTab, setActiveTab] = useState(defaultStatus === 'draft' ? 'manual' : 'manual');
-  const { settings } = useSettings();
+  const { settings, setSetting } = useSettings();
   const { websites } = useWebsites();
   const { prompts } = usePrompts();
 
@@ -1859,7 +1859,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         <Radio.Group
           value={settings['feishu_notify_mode'] || 'immediate'}
           onChange={async (e) => {
-            await import('../hooks/useSettings').then(m => m.useSettings().setSetting('feishu_notify_mode', e.target.value));
+            await setSetting('feishu_notify_mode', e.target.value);
             message.success(`已切换为${e.target.value === 'immediate' ? '即时通知' : '批量通知'}`);
           }}
           optionType="button"

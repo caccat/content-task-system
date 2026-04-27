@@ -1366,6 +1366,9 @@ function CreatedTasksList() {
         
         return (
           <Space size="small">
+            <Button type="link" size="small" onClick={() => handleEditTask(record, tasksToEdit)}>
+              编辑
+            </Button>
             <Popconfirm
               title="确定删除?"
               description={`删除 ${record.city} 的 ${record.total} 篇文章`}
