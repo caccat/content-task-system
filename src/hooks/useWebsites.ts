@@ -42,7 +42,7 @@ export function useWebsites() {
     return () => clearInterval(interval);
   }, [fetchWebsites]);
 
-  const createWebsite = async (websiteData: Omit<Website, 'id' | 'created_at' | 'updated_at'>) => {
+  const createWebsite = async (websiteData: Omit<Website, 'id' | 'created_at' | 'updated_at' | 'status_updated_at'>) => {
     const now = new Date().toISOString();
     const { data, error } = await supabase
       .from('websites')
