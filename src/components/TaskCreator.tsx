@@ -606,9 +606,7 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
                     style={{ padding: 0, fontSize: 12 }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      const newConfigs = { ...batchConfigs };
-                      delete newConfigs[`${record.id}-${type.id}`];
-                      setBatchConfigs(newConfigs);
+                      updateWebsiteConfig(record.id, type.id, []);
                       message.success('已清空');
                     }}
                   >
