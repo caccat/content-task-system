@@ -1,5 +1,19 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+// 获取北京时间
+function getBeijingTime(): { date: string; time: string } {
+  const now = new Date();
+  // 转换为北京时间 (UTC+8)
+  const beijingOffset = 8 * 60; // 分钟
+  const localOffset = now.getTimezoneOffset();
+  const beijingTime = new Date(now.getTime() + (localOffset + beijingOffset) * 60 * 1000);
+  
+  const date = beijingTime.toISOString().split('T')[0]; // YYYY-MM-DD
+  const time = beijingTime.toTimeString().slice(0, 5); // HH:MM
+  
+  return { date, time };
+}
+
 // 每日任务统计通知
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 设置 CORS 头
@@ -64,15 +78,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     );
     const timeData = await timeResponse.json();
-    const notifyTime = timeData?.[0]?.value || '17:30';
+    const notifyTime = timeData?.[0]?.value || '18:30';
 
-    // 获取当前日期时间
-    const now = new Date();
-    const formattedTime = notifyTime;
+    // 获取北京时间
+    const { date: today, time: currentTime } = getBeijingTime();
+    const todayStart = `${today}T00:00:00`;
+    const todayEnd = `${today}T23:59:59`;
 
-    // 查询待生成任务数（status = pending）
-    const pendingResponse = await fetch(
-      `${supabaseUrl}/rest/v1/tasks?status=eq.pending&select=id`,
+    // 查询待生成任务数（今天新增的 pending 任务 + 逾期的 pending 任务）
+    // 1. 今天新增的 pending 任务
+    const newPendingResponse = await fetch(
+      `${supabaseUrl}/rest/v1/tasks?status=eq.pending&created_at=gte.${todayStart}&created_at=lte.${todayEnd}&select=id`,
       {
         headers: {
           'apikey': supabaseKey,
@@ -80,12 +96,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
       }
     );
-    const pendingTasks = await pendingResponse.json();
-    const pendingCount = Array.isArray(pendingTasks) ? pendingTasks.length : 0;
+    const newPendingTasks = await newPendingResponse.json();
+    const newPendingCount = Array.isArray(newPendingTasks) ? newPendingTasks.length : 0;
 
-    // 查询待发布任务数（查询 articles 表中 status = ready 的）
-    const readyResponse = await fetch(
-      `${supabaseUrl}/rest/v1/articles?status=eq.ready&select=id`,
+    // 2. 逾期的 pending 任务（deadline < 今天 且 status = pending）
+    const overduePendingResponse = await fetch(
+      `${supabaseUrl}/rest/v1/tasks?status=eq.pending&deadline=lt.${todayStart}&select=id`,
       {
         headers: {
           'apikey': supabaseKey,
@@ -93,15 +109,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
       }
     );
-    const readyArticles = await readyResponse.json();
-    const readyCount = Array.isArray(readyArticles) ? readyArticles.length : 0;
+    const overduePendingTasks = await overduePendingResponse.json();
+    const overduePendingCount = Array.isArray(overduePendingTasks) ? overduePendingTasks.length : 0;
+
+    const totalPendingCount = newPendingCount + overduePendingCount;
+
+    // 查询待发布文章数（今天新增的 ready 文章 + 逾期的 ready 文章）
+    // 1. 今天新增的 ready 文章
+    const newReadyResponse = await fetch(
+      `${supabaseUrl}/rest/v1/articles?status=eq.ready&created_at=gte.${todayStart}&created_at=lte.${todayEnd}&select=id`,
+      {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+      }
+    );
+    const newReadyArticles = await newReadyResponse.json();
+    const newReadyCount = Array.isArray(newReadyArticles) ? newReadyArticles.length : 0;
+
+    // 2. 逾期的 ready 文章（基于 article 的 created_at 超过一定时间的，暂用 created_at 判断）
+    // 注意：这里需要关联 tasks 表的 deadline，但 articles 表没有 deadline 字段
+    // 简化方案：只统计今天新增的 ready 文章，或者假设 deadline 沿用 tasks 表
+    const overdueReadyResponse = await fetch(
+      `${supabaseUrl}/rest/v1/articles?status=eq.ready&created_at=lt.${todayStart}&select=id`,
+      {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+      }
+    );
+    const overdueReadyArticles = await overdueReadyResponse.json();
+    const overdueReadyCount = Array.isArray(overdueReadyArticles) ? overdueReadyArticles.length : 0;
+
+    const totalReadyCount = newReadyCount + overdueReadyCount;
 
     // 构建通知消息
+    let detailText = '';
+    if (overduePendingCount > 0 || overdueReadyCount > 0) {
+      detailText = `\n其中逾期：${overduePendingCount} 个未生成，${overdueReadyCount} 个待发布`;
+    }
+
     const message = `📊 每日任务统计
 
-截止 ${formattedTime}，今日还有：
-• 🖊️ ${pendingCount} 个任务未生成
-• 📤 ${readyCount} 个待发布
+截止 ${currentTime}，今日新增：
+• 🖊️ ${newPendingCount} 个任务未生成
+• 📤 ${newReadyCount} 个待发布${detailText}
 
 ---
 来自内容任务系统`;
@@ -124,9 +178,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       message: '每日通知发送成功',
       stats: {
-        pendingCount,
-        readyCount,
-        notifyTime: formattedTime
+        newPendingCount,
+        newReadyCount,
+        overduePendingCount,
+        overdueReadyCount,
+        currentTime
       }
     });
 
