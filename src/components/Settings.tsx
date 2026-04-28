@@ -11,18 +11,16 @@ export default function Settings() {
   const [notifyMode, setNotifyMode] = useState('immediate');
   const [dailyNotificationEnabled, setDailyNotificationEnabled] = useState(false);
   const [dailyNotificationTime, setDailyNotificationTime] = useState(dayjs('17:30', 'HH:mm'));
-  const [initialized, setInitialized] = useState(false);
 
-  // 加载保存的设置（只执行一次）
+  // 加载保存的设置
   useEffect(() => {
-    if (initialized) return;
+    if (loading) return; // 等待数据加载完成
     
     setNotifyMode(getSetting('feishu_notify_mode', 'immediate'));
     setDailyNotificationEnabled(getSetting('daily_notification_enabled', 'false') === 'true');
     const savedTime = getSetting('daily_notification_time', '17:30');
     setDailyNotificationTime(dayjs(savedTime, 'HH:mm'));
-    setInitialized(true);
-  }, [getSetting, initialized]);
+  }, [loading, getSetting]);
 
   const handleNotifyModeChange = async (value: string) => {
     try {
