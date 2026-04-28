@@ -120,71 +120,66 @@ export default function Settings() {
 
           <Divider />
 
-          <Form
-            form={form}
-            layout="vertical"
-            onFinish={handleSave}
-          >
-            <div style={{ background: '#fff7e6', padding: '12px', borderRadius: '8px', border: '1px solid #ffd591', marginBottom: 16 }}>
-              <Text strong style={{ color: '#fa8c16' }}>飞书 Webhook 配置说明：</Text>
-              <ol style={{ margin: '8px 0 0 0', paddingLeft: '20px', color: '#666' }}>
-                <li>Webhook 地址保存在服务端环境变量中，确保安全</li>
-                <li>如需修改，请联系管理员在 Vercel 环境变量中配置 <code>FEISHU_WEBHOOK</code></li>
-                <li>也可以直接在数据库 settings 表中配置 <code>feishu_webhook</code> 字段</li>
-              </ol>
-            </div>
+          <div style={{ background: '#fff7e6', padding: '12px', borderRadius: '8px', border: '1px solid #ffd591', marginBottom: 16 }}>
+            <Text strong style={{ color: '#fa8c16' }}>飞书 Webhook 配置说明：</Text>
+            <ol style={{ margin: '8px 0 0 0', paddingLeft: '20px', color: '#666' }}>
+              <li>Webhook 地址保存在服务端环境变量中，确保安全</li>
+              <li>如需修改，请联系管理员在 Vercel 环境变量中配置 <code>FEISHU_WEBHOOK</code></li>
+              <li>也可以直接在数据库 settings 表中配置 <code>feishu_webhook</code> 字段</li>
+            </ol>
+          </div>
 
-            <div>
-              <Text strong style={{ display: 'block', marginBottom: 8 }}>通知模式</Text>
-              <Radio.Group
-                value={notifyMode}
-                onChange={(e) => handleNotifyModeChange(e.target.value)}
-              >
-                <Radio value="immediate">即时通知（每篇内容准备好立即发送）</Radio>
-                <Radio value="batch">批量通知（每天汇总发送一次）</Radio>
-              </Radio.Group>
-            </div>
+          <div>
+            <Text strong style={{ display: 'block', marginBottom: 8 }}>通知模式</Text>
+            <Radio.Group
+              value={notifyMode}
+              onChange={(e) => handleNotifyModeChange(e.target.value)}
+            >
+              <Radio value="immediate">即时通知（每篇内容准备好立即发送）</Radio>
+              <Radio value="batch">批量通知（每天汇总发送一次）</Radio>
+            </Radio.Group>
+          </div>
 
-            <Divider />
+          <Divider />
 
-            <div style={{ background: '#f0f5ff', padding: '16px', borderRadius: '8px', border: '1px solid #adc6ff' }}>
-              <Space style={{ marginBottom: 12 }}>
-                <ClockCircleOutlined style={{ fontSize: 18, color: '#1677ff' }} />
-                <Text strong style={{ fontSize: 16 }}>每日定时通知</Text>
-                <Switch
-                  checked={dailyNotificationEnabled}
-                  onChange={handleDailyNotificationToggle}
-                  checkedChildren="开"
-                  unCheckedChildren="关"
-                />
-              </Space>
-              {dailyNotificationEnabled && (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Text type="secondary">
-                    设置每日自动发送任务统计到飞书群
-                  </Text>
-                  <Space>
-                    <Text>通知时间：</Text>
-                    <TimePicker
-                      value={dailyNotificationTime}
-                      onChange={handleDailyNotificationTimeChange}
-                      format="HH:mm"
-                      placeholder="选择时间"
-                      minuteStep={5}
-                    />
-                    <Button onClick={testDailyNotification}>
-                      测试每日通知
-                    </Button>
-                  </Space>
-                </Space>
-              )}
-            </div>
-
-            <Space style={{ marginTop: 16 }}>
-              <Button onClick={testWebhook}>
-                发送测试消息
-              </Button>
+          <div style={{ background: '#f0f5ff', padding: '16px', borderRadius: '8px', border: '1px solid #adc6ff' }}>
+            <Space style={{ marginBottom: 12 }}>
+              <ClockCircleOutlined style={{ fontSize: 18, color: '#1677ff' }} />
+              <Text strong style={{ fontSize: 16 }}>每日定时通知</Text>
+              <Switch
+                checked={dailyNotificationEnabled}
+                onChange={handleDailyNotificationToggle}
+                checkedChildren="开"
+                unCheckedChildren="关"
+              />
             </Space>
+            {dailyNotificationEnabled && (
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Text type="secondary">
+                  设置每日自动发送任务统计到飞书群
+                </Text>
+                <Space>
+                  <Text>通知时间：</Text>
+                  <TimePicker
+                    value={dailyNotificationTime}
+                    onChange={handleDailyNotificationTimeChange}
+                    format="HH:mm"
+                    placeholder="选择时间"
+                    minuteStep={5}
+                  />
+                  <Button onClick={testDailyNotification}>
+                    测试每日通知
+                  </Button>
+                </Space>
+              </Space>
+            )}
+          </div>
+
+          <Space style={{ marginTop: 16 }}>
+            <Button onClick={testWebhook}>
+              发送测试消息
+            </Button>
+          </Space>
 
           <Divider />
 
