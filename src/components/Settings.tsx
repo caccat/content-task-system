@@ -7,7 +7,7 @@ import dayjs from 'dayjs';
 const { Title, Text } = Typography;
 
 export default function Settings() {
-  const { getSetting, setSetting, loading } = useSettings();
+  const { settings, setSetting, loading } = useSettings();
   const [notifyMode, setNotifyMode] = useState('immediate');
   const [dailyNotificationEnabled, setDailyNotificationEnabled] = useState(false);
   const [dailyNotificationTime, setDailyNotificationTime] = useState(dayjs('17:30', 'HH:mm'));
@@ -16,11 +16,11 @@ export default function Settings() {
   useEffect(() => {
     if (loading) return; // 等待数据加载完成
     
-    setNotifyMode(getSetting('feishu_notify_mode', 'immediate'));
-    setDailyNotificationEnabled(getSetting('daily_notification_enabled', 'false') === 'true');
-    const savedTime = getSetting('daily_notification_time', '17:30');
+    setNotifyMode(settings.feishu_notify_mode || 'immediate');
+    setDailyNotificationEnabled(settings.daily_notification_enabled === 'true');
+    const savedTime = settings.daily_notification_time || '17:30';
     setDailyNotificationTime(dayjs(savedTime, 'HH:mm'));
-  }, [loading, getSetting]);
+  }, [loading, settings]);
 
   const handleNotifyModeChange = async (value: string) => {
     try {
