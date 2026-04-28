@@ -90,7 +90,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const todayEnd = `${today}T23:59:59`;
 
     // 查询待生成任务数（今天新增的 pending 任务 + 逾期的 pending 任务）
-    // 1. 今天新增的 pending 任务
+    // 1. 今天新增的 pending 任务（基于 tasks 表）
     const newPendingResponse = await fetch(
       `${supabaseUrl}/rest/v1/tasks?status=eq.pending&created_at=gte.${todayStart}&created_at=lte.${todayEnd}&select=id`,
       {
@@ -103,7 +103,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const newPendingTasks = await newPendingResponse.json();
     const newPendingCount = Array.isArray(newPendingTasks) ? newPendingTasks.length : 0;
 
-    // 2. 逾期的 pending 任务（deadline < 今天 且 status = pending）
+    // 2. 逾期的 pending 任务
+    // 正确逻辑：从 tasks 表查 deadline < 今天 且 status = pending 的任务
+    // 注意：tasks.status 在文章生成后可能没有正确更新，需要额外检查 articles 表
     const overduePendingResponse = await fetch(
       `${supabaseUrl}/rest/v1/tasks?status=eq.pending&deadline=lt.${todayStart}&select=id`,
       {
@@ -114,9 +116,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     );
     const overduePendingTasks = await overduePendingResponse.json();
-    const overduePendingCount = Array.isArray(overduePendingTasks) ? overduePendingTasks.length : 0;
+    const overduePendingList = Array.isArray(overduePendingTasks) ? overduePendingTasks : [];
+    const overduePendingCount = overduePendingList.length;
+    
+    // 3. 更准确的逾期统计
+    // 由于 tasks.status 在文章生成后可能没有正确更新，需要检查 articles 表
+    // 获取所有截止日期早于今天的 pending 任务的 ID
+    const overdueTaskIds = overduePendingList.map((t: any) => t.id);
+    
+    let trulyOverdueCount = 0;
+    if (overdueTaskIds.length > 0) {
+      // 查询这些任务中，有哪些有 ready 或 published 状态的文章
+      const articlesCheckResponse = await fetch(
+        `${supabaseUrl}/rest/v1/articles?task_id=in.(${overdueTaskIds.join(',')})&status=in.(ready,published)&select=task_id`,
+        {
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`,
+          },
+        }
+      );
+      const articlesWithReadyOrPublished = await articlesCheckResponse.json();
+      const tasksWithGeneratedArticles = new Set(
+        (Array.isArray(articlesWithReadyOrPublished) ? articlesWithReadyOrPublished : [])
+          .map((a: any) => a.task_id)
+      );
+      
+      // 真正逾期 = deadline 已过 + 没有 ready/published 的文章
+      trulyOverdueCount = overdueTaskIds.length - tasksWithGeneratedArticles.size;
+    }
 
-    const totalPendingCount = newPendingCount + overduePendingCount;
+    const totalPendingCount = newPendingCount + trulyOverdueCount;
 
     // 查询待发布文章数（今天新增的 ready 文章 + 逾期的 ready 文章）
     // 1. 今天新增的 ready 文章
@@ -151,8 +181,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 构建通知消息
     let detailText = '';
-    if (overduePendingCount > 0 || overdueReadyCount > 0) {
-      detailText = `\n其中逾期：${overduePendingCount} 个未生成，${overdueReadyCount} 个待发布`;
+    if (trulyOverdueCount > 0 || overdueReadyCount > 0) {
+      detailText = `\n其中逾期：${trulyOverdueCount} 个未生成，${overdueReadyCount} 个待发布`;
     }
 
     const message = `📊 每日任务统计
@@ -185,6 +215,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         newPendingCount,
         newReadyCount,
         overduePendingCount,
+        trulyOverdueCount,
         overdueReadyCount,
         currentTime
       }
