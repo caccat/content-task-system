@@ -1,15 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, message, Typography, Space, Divider, Radio, Switch, TimePicker } from 'antd';
-import { SaveOutlined, BellOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { Card, Button, message, Typography, Space, Divider, Radio, Switch, TimePicker } from 'antd';
+import { BellOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useSettings } from '../hooks/useSettings';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 
 export default function Settings() {
-  const [form] = Form.useForm();
   const { getSetting, setSetting, loading } = useSettings();
-  const [saving, setSaving] = useState(false);
   const [notifyMode, setNotifyMode] = useState('immediate');
   const [dailyNotificationEnabled, setDailyNotificationEnabled] = useState(false);
   const [dailyNotificationTime, setDailyNotificationTime] = useState(dayjs('17:30', 'HH:mm'));
@@ -19,27 +17,12 @@ export default function Settings() {
   useEffect(() => {
     if (initialized) return;
     
-    form.setFieldsValue({
-      feishu_webhook: getSetting('feishu_webhook', ''),
-    });
     setNotifyMode(getSetting('feishu_notify_mode', 'immediate'));
     setDailyNotificationEnabled(getSetting('daily_notification_enabled', 'false') === 'true');
     const savedTime = getSetting('daily_notification_time', '17:30');
     setDailyNotificationTime(dayjs(savedTime, 'HH:mm'));
     setInitialized(true);
-  }, [form, getSetting, initialized]);
-
-  const handleSave = async (values: any) => {
-    setSaving(true);
-    try {
-      await setSetting('feishu_webhook', values.feishu_webhook || '');
-      message.success('设置已保存');
-    } catch {
-      message.error('保存失败');
-    } finally {
-      setSaving(false);
-    }
-  };
+  }, [getSetting, initialized]);
 
   const handleNotifyModeChange = async (value: string) => {
     try {
@@ -52,28 +35,24 @@ export default function Settings() {
   };
 
   const testWebhook = async () => {
-    const webhook = form.getFieldValue('feishu_webhook');
-    if (!webhook) {
-      message.warning('请先填写 Webhook 地址');
-      return;
-    }
-
     try {
-      const response = await fetch(webhook, {
+      // 通过 API 发送测试消息，webhook 保存在服务端
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const response = await fetch(`${apiUrl}/api/send-feishu-notification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          msg_type: 'text',
-          content: {
-            text: '🔔 测试消息\n\n飞书通知配置成功！当有内容准备发布时，您将收到通知。'
-          }
+          city: '测试任务',
+          deadline: dayjs().format('YYYY-MM-DD'),
+          content: '🔔 测试消息\n\n飞书通知配置成功！当有内容准备发布时，您将收到通知。'
         })
       });
 
       if (response.ok) {
         message.success('测试消息已发送，请检查飞书群');
       } else {
-        message.error('发送失败，请检查 Webhook 地址是否正确');
+        const data = await response.json();
+        message.error(data.error || '发送失败，请检查 Webhook 配置');
       }
     } catch (error) {
       message.error('发送失败，请检查网络连接');
@@ -106,12 +85,6 @@ export default function Settings() {
 
   // 测试每日通知
   const testDailyNotification = async () => {
-    const webhook = form.getFieldValue('feishu_webhook');
-    if (!webhook) {
-      message.warning('请先填写 Webhook 地址');
-      return;
-    }
-
     try {
       // 从环境变量获取 API URL（Vercel 会自动设置）
       const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
@@ -152,21 +125,17 @@ export default function Settings() {
             layout="vertical"
             onFinish={handleSave}
           >
-            <Form.Item
-              name="feishu_webhook"
-              label="飞书群 Webhook 地址"
-              extra="在飞书群设置中添加自定义机器人，复制 Webhook 地址粘贴到这里"
-            >
-              <Input.TextArea
-                placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
-                rows={2}
-              />
-            </Form.Item>
+            <div style={{ background: '#fff7e6', padding: '12px', borderRadius: '8px', border: '1px solid #ffd591', marginBottom: 16 }}>
+              <Text strong style={{ color: '#fa8c16' }}>飞书 Webhook 配置说明：</Text>
+              <ol style={{ margin: '8px 0 0 0', paddingLeft: '20px', color: '#666' }}>
+                <li>Webhook 地址保存在服务端环境变量中，确保安全</li>
+                <li>如需修改，请联系管理员在 Vercel 环境变量中配置 <code>FEISHU_WEBHOOK</code></li>
+                <li>也可以直接在数据库 settings 表中配置 <code>feishu_webhook</code> 字段</li>
+              </ol>
+            </div>
 
-            <Form.Item
-              label="通知模式"
-              extra="选择通知发送方式"
-            >
+            <div>
+              <Text strong style={{ display: 'block', marginBottom: 8 }}>通知模式</Text>
               <Radio.Group
                 value={notifyMode}
                 onChange={(e) => handleNotifyModeChange(e.target.value)}
@@ -174,7 +143,7 @@ export default function Settings() {
                 <Radio value="immediate">即时通知（每篇内容准备好立即发送）</Radio>
                 <Radio value="batch">批量通知（每天汇总发送一次）</Radio>
               </Radio.Group>
-            </Form.Item>
+            </div>
 
             <Divider />
 
@@ -204,39 +173,27 @@ export default function Settings() {
                       minuteStep={5}
                     />
                     <Button onClick={testDailyNotification}>
-                      测试通知
+                      测试每日通知
                     </Button>
                   </Space>
                 </Space>
               )}
             </div>
 
-            <Form.Item>
-              <Space>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  icon={<SaveOutlined />}
-                  loading={saving}
-                >
-                  保存设置
-                </Button>
-                <Button onClick={testWebhook}>
-                  发送测试消息
-                </Button>
-              </Space>
-            </Form.Item>
-          </Form>
+            <Space style={{ marginTop: 16 }}>
+              <Button onClick={testWebhook}>
+                发送测试消息
+              </Button>
+            </Space>
 
           <Divider />
 
           <div style={{ background: '#f6ffed', padding: '16px', borderRadius: '8px', border: '1px solid #b7eb8f' }}>
-            <Text strong style={{ color: '#52c41a' }}>配置说明：</Text>
+            <Text strong style={{ color: '#52c41a' }}>获取飞书 Webhook：</Text>
             <ol style={{ margin: '8px 0 0 0', paddingLeft: '20px', color: '#666' }}>
               <li>在飞书群中点击右上角「...」→「群机器人」</li>
               <li>点击「添加机器人」，选择「自定义机器人」</li>
-              <li>复制生成的 Webhook 地址，粘贴到上方输入框</li>
-              <li>点击「保存设置」，然后可以「发送测试消息」验证</li>
+              <li>复制生成的 Webhook 地址，配置到环境变量或数据库中</li>
             </ol>
           </div>
         </Space>

@@ -407,17 +407,18 @@ function RetryTaskEditor({
   );
 }
 
-// 发送飞书通知
-const sendFeishuNotification = async (webhook: string, task: TaskWithArticles, article: Article) => {
+// 发送飞书通知（通过 API 端点，避免 webhook 暴露在前端）
+const sendFeishuNotification = async (task: TaskWithArticles, article: Article) => {
   try {
-    const response = await fetch(webhook, {
+    // 调用 API 端点发送通知，webhook 地址保存在服务端
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const response = await fetch(`${apiUrl}/api/send-feishu-notification`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        msg_type: 'text',
-        content: {
-          text: `📢 新内容待发布\n\n任务：${task.city}\n文章状态：准备发布\n截止日期：${dayjs(task.deadline).format('YYYY-MM-DD')}\n\n请尽快安排发布。`
-        }
+        city: task.city,
+        deadline: dayjs(task.deadline).format('YYYY-MM-DD'),
+        content: `文章状态：准备发布\n\n请尽快安排发布。`
       })
     });
     
@@ -540,10 +541,10 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
       message.success('已标记为准备发布');
 
       const notifyMode = settings['feishu_notify_mode'] || 'immediate';
-      const feishuWebhook = settings['feishu_webhook'];
 
-      if (feishuWebhook && notifyMode === 'immediate') {
-        await sendFeishuNotification(feishuWebhook, task, article);
+      // 通过 API 发送通知，webhook 保存在服务端
+      if (notifyMode === 'immediate') {
+        await sendFeishuNotification(task, article);
       }
 
       // 成功后关闭弹窗
