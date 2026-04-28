@@ -182,7 +182,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 构建通知消息
     let detailText = '';
     if (trulyOverdueCount > 0 || overdueReadyCount > 0) {
-      detailText = `\n其中逾期：${trulyOverdueCount} 个未生成，${overdueReadyCount} 个待发布`;
+      detailText = `\n此前逾期：${trulyOverdueCount} 个未生成，${overdueReadyCount} 个待发布`;
     }
 
     const message = `📊 每日任务统计
