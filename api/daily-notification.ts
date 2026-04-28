@@ -33,18 +33,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: '未配置 Supabase 环境变量' });
     }
 
-    // 获取飞书 Webhook
-    const webhookResponse = await fetch(
-      `${supabaseUrl}/rest/v1/settings?key=eq.feishu_webhook&select=value`,
-      {
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-        },
-      }
-    );
-    const webhookData = await webhookResponse.json();
-    const feishuWebhook = webhookData?.[0]?.value;
+    // 获取飞书 Webhook（优先从环境变量读取，其次从数据库读取）
+    let feishuWebhook = process.env.FEISHU_WEBHOOK;
+    
+    if (!feishuWebhook) {
+      const webhookResponse = await fetch(
+        `${supabaseUrl}/rest/v1/settings?key=eq.feishu_webhook&select=value`,
+        {
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`,
+          },
+        }
+      );
+      const webhookData = await webhookResponse.json();
+      feishuWebhook = webhookData?.[0]?.value;
+    }
 
     if (!feishuWebhook) {
       return res.status(400).json({ error: '未配置飞书 Webhook' });
