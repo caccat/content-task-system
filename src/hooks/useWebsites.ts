@@ -37,7 +37,7 @@ export function useWebsites() {
     // 每 10 秒刷新一次
     const interval = setInterval(() => {
       fetchWebsites();
-    }, 10000);
+    }, 60000);
 
     return () => clearInterval(interval);
   }, [fetchWebsites]);
