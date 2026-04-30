@@ -179,7 +179,7 @@ function App() {
     fetchTaskStats();
 
     // 设置定时刷新（每 30 秒）
-    const interval = setInterval(fetchTaskStats, 30000);
+    const interval = setInterval(fetchTaskStats, 120000);
     return () => clearInterval(interval);
   }, []);
 
