@@ -34,7 +34,7 @@ export function useWebsites() {
   useEffect(() => {
     fetchWebsites();
 
-    // 每 10 秒刷新一次
+    // 每 60 秒刷新一次（减少连接池压力）
     const interval = setInterval(() => {
       fetchWebsites();
     }, 60000);

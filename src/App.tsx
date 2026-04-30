@@ -178,7 +178,7 @@ function App() {
 
     fetchTaskStats();
 
-    // 设置定时刷新（每 30 秒）
+    // 设置定时刷新（每 120 秒，减少数据库压力）
     const interval = setInterval(fetchTaskStats, 120000);
     return () => clearInterval(interval);
   }, []);

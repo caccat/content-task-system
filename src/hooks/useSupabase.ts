@@ -57,10 +57,10 @@ export function useTasks() {
   useEffect(() => {
     fetchTasks();
     
-    // 禁用实时订阅，使用轮询避免错误
+    // 每 60 秒刷新一次（减少连接池压力）
     const interval = setInterval(() => {
       fetchTasks();
-    }, 60000); // 每 60 秒刷新一次
+    }, 60000);
 
     return () => {
       clearInterval(interval);
