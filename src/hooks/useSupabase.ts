@@ -60,7 +60,7 @@ export function useTasks() {
     // 禁用实时订阅，使用轮询避免错误
     const interval = setInterval(() => {
       fetchTasks();
-    }, 10000); // 每 10 秒刷新一次
+    }, 60000); // 每 60 秒刷新一次
 
     return () => {
       clearInterval(interval);
