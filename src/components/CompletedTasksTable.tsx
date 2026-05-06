@@ -4,8 +4,9 @@ import {
   EyeOutlined, CopyOutlined, LinkOutlined, ExportOutlined,
   EditOutlined, CheckOutlined, CloseOutlined
 } from '@ant-design/icons';
-import type { TaskWithArticles, Article } from '../types';
-import { useTasks, usePrompts } from '../hooks/useSupabase';
+import type { TaskWithArticles, Article, Prompt } from '../types';
+import { useTasks } from '../hooks/useSupabase';
+import { usePrompts } from '../hooks/usePrompts';
 import { useWebsites } from '../hooks/useWebsites';
 import { CITIES } from '../types';
 import dayjs from 'dayjs';
@@ -58,7 +59,7 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
 
   // 获取提示词类型名称（从prompts表动态获取）
   const getPromptTypeLabel = useCallback((promptTypeId: string): string => {
-    const prompt = prompts.find(p => p.id === promptTypeId);
+    const prompt = prompts.find((p: Prompt) => p.id === promptTypeId);
     return prompt ? prompt.type : promptTypeId;
   }, [prompts]);
 
@@ -477,7 +478,7 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
             style={{ padding: '6px 10px', border: '1px solid #d9d9d9', borderRadius: 6, minWidth: 120 }}
           >
             <option value="">全部类型</option>
-            {prompts.map(prompt => (
+            {prompts.map((prompt: Prompt) => (
               <option key={prompt.id} value={prompt.id}>{prompt.type}</option>
             ))}
           </select>
