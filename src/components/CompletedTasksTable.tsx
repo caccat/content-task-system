@@ -385,9 +385,12 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
             <DatePicker
               showTime
               value={editValue ? dayjs(editValue) : null}
-              onChange={(date) => setEditValue(date?.toISOString() || '')}
-              onOk={saveEdit}
-              onCancel={cancelEdit}
+              onChange={(date) => {
+                setEditValue(date?.toISOString() || '');
+                // 选择日期后自动保存
+                if (date) saveEdit();
+              }}
+              onBlur={cancelEdit}
               size="small"
               style={{ width: 160 }}
             />
