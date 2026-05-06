@@ -13,26 +13,33 @@ import dayjs from 'dayjs';
 
 const { Text } = Typography;
 
+// 解码 HTML 实体（&nbsp; &amp; &lt; 等）
+const decodeHtmlEntities = (text: string): string => {
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = text;
+  return textarea.value;
+};
+
 // 从 HTML 内容中提取标题（优先 H1，否则取第一个 p）
 const extractTitle = (content: string): string => {
   if (!content) return '无标题';
   // 优先提取 h1
   const h1Match = content.match(/<h1[^>]*>(.*?)<\/h1>/is);
   if (h1Match) {
-    return h1Match[1].replace(/<[^>]+>/g, '').trim();
+    return decodeHtmlEntities(h1Match[1].replace(/<[^>]+>/g, '').trim());
   }
   // 没有h1则取第一个 p 的内容
   const pMatch = content.match(/<p[^>]*>(.*?)<\/p>/is);
   if (pMatch) {
-    return pMatch[1].replace(/<[^>]+>/g, '').trim();
+    return decodeHtmlEntities(pMatch[1].replace(/<[^>]+>/g, '').trim());
   }
   return '无标题';
 };
 
-// 检测文章是否包含 H1 标签
+// 检测文章是否包含 H 标签（h1-h6）
 const checkHasH1 = (content: string): boolean => {
   if (!content) return false;
-  return /<h1[\s>]/i.test(content);
+  return /<h[1-6][\s>]/i.test(content);
 };
 
 // 截断文本
