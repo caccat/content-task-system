@@ -13,15 +13,26 @@ import dayjs from 'dayjs';
 
 const { Text } = Typography;
 
-// 从 HTML 内容中提取 h1 标题
+// 从 HTML 内容中提取标题（优先 H1，否则取第一个 p）
 const extractTitle = (content: string): string => {
   if (!content) return '无标题';
-  const match = content.match(/<h1[^>]*>(.*?)<\/h1>/is);
-  if (match) {
-    // 去除 HTML 标签，只保留文本
-    return match[1].replace(/<[^>]+>/g, '').trim();
+  // 优先提取 h1
+  const h1Match = content.match(/<h1[^>]*>(.*?)<\/h1>/is);
+  if (h1Match) {
+    return h1Match[1].replace(/<[^>]+>/g, '').trim();
+  }
+  // 没有h1则取第一个 p 的内容
+  const pMatch = content.match(/<p[^>]*>(.*?)<\/p>/is);
+  if (pMatch) {
+    return pMatch[1].replace(/<[^>]+>/g, '').trim();
   }
   return '无标题';
+};
+
+// 检测文章是否包含 H1 标签
+const checkHasH1 = (content: string): boolean => {
+  if (!content) return false;
+  return /<h1[\s>]/i.test(content);
 };
 
 // 截断文本
@@ -71,6 +82,7 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
       task: TaskWithArticles;
       markCompletedTime: string;
       title: string;
+      hasH1: boolean;
       city: string;
       promptType: string;
       platform: string;
@@ -92,6 +104,7 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
           task,
           markCompletedTime: article.published_at || '',
           title: extractTitle(article.content),
+          hasH1: checkHasH1(article.content),
           city: task.city,
           promptType: task.prompt_type,
           platform: websiteInfo?.platform || '-',
@@ -177,6 +190,7 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
         '序号': index + 1,
         '标记完成时间': row.markCompletedTime ? dayjs(row.markCompletedTime).format('YYYY-MM-DD HH:mm') : '',
         '标题': row.title,
+        '是否设置H层级': row.hasH1 ? '是' : '否',
         '城市': row.city,
         '提示词类型': getPromptTypeLabel(row.promptType),
         '投稿平台': row.platform,
@@ -194,6 +208,7 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
         { wch: 6 },   // 序号
         { wch: 18 },  // 标记完成时间
         { wch: 40 },  // 标题
+        { wch: 12 },  // 是否设置H层级
         { wch: 10 },  // 城市
         { wch: 12 },  // 提示词类型
         { wch: 12 },  // 投稿平台
@@ -213,11 +228,12 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
   // 导出 CSV
   const exportToCSV = () => {
     try {
-      const headers = ['序号,标记完成时间,标题,城市,提示词类型,投稿平台,发布网站,回链,平台发稿时间'];
+      const headers = ['序号,标记完成时间,标题,是否设置H层级,城市,提示词类型,投稿平台,发布网站,回链,平台发稿时间'];
       const rows = filteredData.map((row, index) => [
         index + 1,
         row.markCompletedTime ? dayjs(row.markCompletedTime).format('YYYY-MM-DD HH:mm') : '',
         `"${(row.title).replace(/"/g, '""')}"`,
+        row.hasH1 ? '是' : '否',
         row.city,
         getPromptTypeLabel(row.promptType),
         row.platform,
@@ -272,6 +288,22 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
             {truncateText(title)}
           </a>
         </Tooltip>
+      ),
+    },
+    {
+      title: '是否设置H层级',
+      dataIndex: 'hasH1',
+      key: 'hasH1',
+      width: 110,
+      filters: [
+        { text: '是 (H1)', value: true },
+        { text: '否 (P)', value: false },
+      ],
+      onFilter: (value: any, record: any) => record.hasH1 === value,
+      render: (hasH1: boolean) => (
+        <Tag color={hasH1 ? 'green' : 'default'}>
+          {hasH1 ? '是' : '否'}
+        </Tag>
       ),
     },
     {
@@ -524,7 +556,7 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
         columns={columns}
         dataSource={filteredData}
         loading={loading}
-        scroll={{ x: 1300 }}
+        scroll={{ x: 1450 }}
         pagination={{
           pageSize: 20,
           showTotal: (total) => `共 ${total} 条`,
