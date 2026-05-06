@@ -5,7 +5,7 @@ import {
   EditOutlined, CheckOutlined, CloseOutlined
 } from '@ant-design/icons';
 import type { TaskWithArticles, Article } from '../types';
-import { useTasks } from '../hooks/useSupabase';
+import { useTasks, usePrompts } from '../hooks/useSupabase';
 import { useWebsites } from '../hooks/useWebsites';
 import { CITIES } from '../types';
 import dayjs from 'dayjs';
@@ -35,6 +35,7 @@ interface CompletedTasksTableProps {
 
 export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTableProps) {
   const { tasks, loading, error } = useTasks();
+  const { prompts } = usePrompts();
   const { websites: managedWebsites } = useWebsites();
 
   // 筛选状态
@@ -55,18 +56,11 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
     return managedWebsites.find(w => w.id === websiteId);
   }, [managedWebsites]);
 
-  // 获取提示词类型中文名
-  const getPromptTypeLabel = (type: string): string => {
-    const typeMap: Record<string, string> = {
-      'product_promotion': '产品推广',
-      'brand_story': '品牌故事',
-      'industry_news': '行业资讯',
-      'user_case': '用户案例',
-      'tutorial': '教程指南',
-      'event_promotion': '活动宣传',
-    };
-    return typeMap[type] || type;
-  };
+  // 获取提示词类型名称（从prompts表动态获取）
+  const getPromptTypeLabel = useCallback((promptTypeId: string): string => {
+    const prompt = prompts.find(p => p.id === promptTypeId);
+    return prompt ? prompt.type : promptTypeId;
+  }, [prompts]);
 
   // 展平所有已发布的文章为表格行
   const tableData = useMemo(() => {
@@ -483,12 +477,9 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
             style={{ padding: '6px 10px', border: '1px solid #d9d9d9', borderRadius: 6, minWidth: 120 }}
           >
             <option value="">全部类型</option>
-            <option value="product_promotion">产品推广</option>
-            <option value="brand_story">品牌故事</option>
-            <option value="industry_news">行业资讯</option>
-            <option value="user_case">用户案例</option>
-            <option value="tutorial">教程指南</option>
-            <option value="event_promotion">活动宣传</option>
+            {prompts.map(prompt => (
+              <option key={prompt.id} value={prompt.id}>{prompt.type}</option>
+            ))}
           </select>
 
           <select
