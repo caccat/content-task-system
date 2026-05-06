@@ -16,6 +16,10 @@ export interface Article {
   published_by: string | null;
   website?: string | null;
   notes?: string | null;
+  // 新增：投稿平台回链
+  published_url?: string | null;
+  // 新增：平台实际发稿时间
+  media_published_at?: string | null;
 }
 
 // 网站状态类型

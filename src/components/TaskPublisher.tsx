@@ -6,6 +6,7 @@ import { useWebsites } from '../hooks/useWebsites';
 import type { TaskWithArticles, Article } from '../types';
 import { CITIES } from '../types';
 import dayjs from 'dayjs';
+import CompletedTasksTable from './CompletedTasksTable';
 
 const { Text, Title } = Typography;
 
@@ -170,6 +171,11 @@ interface TaskPublisherProps {
 }
 
 export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
+  // 如果是已完成状态，使用新的表格组件
+  if (defaultStatus === 'completed') {
+    return <CompletedTasksTable defaultStatus={defaultStatus} />;
+  }
+
   const { tasks, loading, error, deleteTask, refreshTasks } = useTasks();
   const [selectedTask, setSelectedTask] = useState<TaskWithArticles | null>(null);
   const { websites: managedWebsites } = useWebsites();
