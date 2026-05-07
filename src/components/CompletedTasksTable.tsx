@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Table, Button, Modal, Input, DatePicker, Tag, Space, Tooltip, message, Typography } from 'antd';
+const { RangePicker } = DatePicker;
 import {
   EyeOutlined, CopyOutlined, LinkOutlined, ExportOutlined,
   EditOutlined, CheckOutlined, CloseOutlined
@@ -62,6 +63,9 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
   const [filterPromptType, setFilterPromptType] = useState<string | undefined>(undefined);
   const [filterPlatform, setFilterPlatform] = useState<string | undefined>(undefined);
   const [searchText, setSearchText] = useState('');
+  // 新增：日期范围筛选
+  const [filterCompletedDateRange, setFilterCompletedDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
+  const [filterPublishedDateRange, setFilterPublishedDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
 
   // 文章预览弹窗
   const [previewArticle, setPreviewArticle] = useState<Article | null>(null);
@@ -131,6 +135,20 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
       if (filterCity && row.city !== filterCity) return false;
       if (filterPromptType && row.promptType !== filterPromptType) return false;
       if (filterPlatform && row.platform !== filterPlatform) return false;
+      // 标记完成时间范围筛选
+      if (filterCompletedDateRange?.[0] && row.markCompletedTime) {
+        if (dayjs(row.markCompletedTime).isBefore(filterCompletedDateRange[0], 'day')) return false;
+      }
+      if (filterCompletedDateRange?.[1] && row.markCompletedTime) {
+        if (dayjs(row.markCompletedTime).isAfter(filterCompletedDateRange[1], 'day')) return false;
+      }
+      // 平台发稿时间范围筛选
+      if (filterPublishedDateRange?.[0] && row.mediaPublishedAt) {
+        if (dayjs(row.mediaPublishedAt).isBefore(filterPublishedDateRange[0], 'day')) return false;
+      }
+      if (filterPublishedDateRange?.[1] && row.mediaPublishedAt) {
+        if (dayjs(row.mediaPublishedAt).isAfter(filterPublishedDateRange[1], 'day')) return false;
+      }
       if (searchText) {
         const searchLower = searchText.toLowerCase();
         const searchable = `${row.title} ${row.city} ${row.promptType} ${row.platform} ${row.websiteName} ${row.publishedUrl || ''}`.toLowerCase();
@@ -138,7 +156,7 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
       }
       return true;
     });
-  }, [tableData, filterCity, filterPromptType, filterPlatform, searchText]);
+  }, [tableData, filterCity, filterPromptType, filterPlatform, searchText, filterCompletedDateRange, filterPublishedDateRange]);
 
   // 更新文章字段
   const updateArticleField = async (articleId: string, field: string, value: any) => {
@@ -533,6 +551,30 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
             ))}
           </select>
 
+          <Space size={4} style={{ display: 'inline-flex', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>标记完成:</span>
+            <RangePicker
+              value={filterCompletedDateRange}
+              onChange={(dates) => setFilterCompletedDateRange(dates as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null)}
+              size="small"
+              format="MM-DD"
+              placeholder={['开始', '结束']}
+              style={{ width: 200 }}
+            />
+          </Space>
+
+          <Space size={4} style={{ display: 'inline-flex', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>发稿时间:</span>
+            <RangePicker
+              value={filterPublishedDateRange}
+              onChange={(dates) => setFilterPublishedDateRange(dates as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null)}
+              size="small"
+              format="MM-DD"
+              placeholder={['开始', '结束']}
+              style={{ width: 200 }}
+            />
+          </Space>
+
           <Input
             placeholder="搜索标题/城市/网站..."
             value={searchText}
@@ -542,7 +584,7 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
             prefix={<span>🔍</span>}
           />
 
-          {(filterCity || filterPromptType || filterPlatform || searchText) && (
+          {(filterCity || filterPromptType || filterPlatform || searchText || filterCompletedDateRange || filterPublishedDateRange) && (
             <Button
               type="link"
               onClick={() => {
@@ -550,6 +592,8 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
                 setFilterPromptType(undefined);
                 setFilterPlatform(undefined);
                 setSearchText('');
+                setFilterCompletedDateRange(null);
+                setFilterPublishedDateRange(null);
               }}
             >
               清除筛选
