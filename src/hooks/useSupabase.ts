@@ -2,6 +2,37 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../supabase';
 import type { Task, Article, TaskWithArticles } from '../types';
 
+// 带超时和重试的请求包装器（解决 Supabase 超时问题）
+async function fetchWithRetry<T>(
+  fn: () => Promise<{ data: T | null; error: any }>,
+  maxRetries = 3,
+  delayMs = 2000,
+): Promise<T | null> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const result = await fn();
+      if (result.error) {
+        // 如果是超时错误且还有重试次数，等待后重试
+        if ((result.error.code === '57014' || result.error.code === 'PGRST301') && attempt < maxRetries - 1) {
+          console.warn(`[fetchWithRetry] 超时，${delayMs}ms 后重试 (${attempt + 1}/${maxRetries})...`);
+          await new Promise(r => setTimeout(r, delayMs * (attempt + 1)));
+          continue;
+        }
+        throw result.error;
+      }
+      return result.data as T;
+    } catch (err) {
+      if (attempt < maxRetries - 1) {
+        console.warn(`[fetchWithRetry] 请求失败，重试中...`, err);
+        await new Promise(r => setTimeout(r, delayMs * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  return null;
+}
+
 export function useTasks() {
   const [tasks, setTasks] = useState<TaskWithArticles[]>([]);
   const [loading, setLoading] = useState(true);
@@ -9,34 +40,37 @@ export function useTasks() {
 
   const fetchTasks = useCallback(async () => {
     try {
-      const { data: tasksData, error: tasksError } = await supabase
-        .from('tasks')
-        .select('*')
-        .order('created_at', { ascending: false });
+      // 先获取任务列表
+      const tasksData = await fetchWithRetry<Task[]>(() =>
+        supabase
+          .from('tasks')
+          .select('*')
+          .order('created_at', { ascending: false })
+      );
 
-      if (tasksError) {
-        console.error('Error fetching tasks:', tasksError);
-        setError(tasksError.message);
+      if (!tasksData) {
+        setError('获取任务列表失败');
         setLoading(false);
         return;
       }
 
-      const taskIds = (tasksData as Task[]).map(t => t.id);
+      const taskIds = tasksData.map(t => t.id);
       
-      const { data: articlesData, error: articlesError } = await supabase
-        .from('articles')
-        .select('*')
-        .in('task_id', taskIds);
+      // 再获取文章数据（带重试）
+      const articlesData = await fetchWithRetry<Article[]>(() =>
+        supabase
+          .from('articles')
+          .select('*')
+          .in('task_id', taskIds)
+      );
 
-      if (articlesError) {
-        console.error('Error fetching articles:', articlesError);
-        setError(articlesError.message);
-        setLoading(false);
-        return;
+      if (articlesData === undefined || articlesData === null) {
+        // 文章获取失败但不阻塞任务显示（降级处理）
+        console.warn('[useTasks] 获取文章失败，以空数组继续');
       }
 
-      const tasksWithArticles: TaskWithArticles[] = (tasksData as Task[]).map(task => {
-        const taskArticles = (articlesData as Article[] || []).filter(a => a.task_id === task.id);
+      const tasksWithArticles: TaskWithArticles[] = tasksData.map(task => {
+        const taskArticles = (articlesData || []).filter(a => a.task_id === task.id);
         return {
           ...task,
           articles: taskArticles,
@@ -46,9 +80,9 @@ export function useTasks() {
 
       setTasks(tasksWithArticles);
       setError(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Unexpected error:', err);
-      setError('连接数据库失败');
+      setError(err?.message || '连接数据库失败');
     } finally {
       setLoading(false);
     }
