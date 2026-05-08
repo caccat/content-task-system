@@ -1773,8 +1773,15 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
             }
             // 保存标题和额外要求到浏览器 localStorage（兼容旧数据）
             saveArticleData(task.id, userTitle, extraRequirement);
-            // 保存到数据库
-            await updateTaskFields(task.id, { user_title: userTitle, extra_requirement: extraRequirement });
+            // 保存到数据库（独立try-catch，不影响文章生成状态）
+            try {
+              console.log('[generateWithAi] 正在保存到DB:', { taskId: task.id, userTitle, extraRequirement });
+              await updateTaskFields(task.id, { user_title: userTitle, extra_requirement: extraRequirement });
+              console.log('[generateWithAi] DB保存成功:', { taskId: task.id });
+            } catch (dbErr) {
+              console.error('[generateWithAi] DB保存失败（不影响生成）:', dbErr);
+              message.warning(`${task.city}: 标题/额外要求保存失败，请重试`);
+            }
             // 更新状态为已完成
             await updateAiStatus(task.id, 'completed');
           } else {
