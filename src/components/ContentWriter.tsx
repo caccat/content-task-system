@@ -113,19 +113,25 @@ function getArticleTitle(taskId: string): string | null {
 // 批量生成标题编辑器子组件
 function BatchTitleEditor({ 
   tasks, 
-  onConfirm 
+  onConfirm,
+  onSaveData,
 }: { 
   tasks: TaskWithArticles[]; 
   onConfirm: (data: { title: string; extraRequirement: string }[])=> void;
+  onSaveData?: (taskId: string, title: string, extraRequirement: string) => void;
 }) {
-  // 存储每个任务的标题和额外要求
+  // 存储每个任务的标题和额外要求（优先从数据库字段读取）
   const [batchData, setBatchData] = useState<Record<string, { title: string; extraRequirement: string }>>(() => {
     const initial: Record<string, { title: string; extraRequirement: string }> = {};
     tasks.forEach((task) => {
-      const savedTitle = getArticleTitle(task.id);
+      // 优先读数据库，再读 localStorage（兼容旧数据），最后用默认值
+      const dbTitle = (task as any).user_title || null;
+      const dbExtra = (task as any).extra_requirement || '';
+      const localData = getArticleTitle(task.id);
+      
       initial[task.id] = {
-        title: savedTitle || `${task.city}相关文章`,
-        extraRequirement: task.writing_suggestions || '', // 从任务读取默认额外要求
+        title: dbTitle || localData || `${task.city}相关文章`,
+        extraRequirement: dbExtra || task.writing_suggestions || '',
       };
     });
     return initial;
@@ -278,6 +284,13 @@ function BatchTitleEditor({
             message.warning('请确保所有任务都填写了标题');
             return;
           }
+          // 保存每条数据到数据库
+          if (onSaveData) {
+            tasks.forEach(t => {
+              const d = batchData[t.id];
+              if (d) onSaveData(t.id, d.title, d.extraRequirement);
+            });
+          }
           onConfirm(data);
         }}
       >
@@ -291,15 +304,21 @@ function BatchTitleEditor({
 function SingleTaskEditor({
   task,
   onConfirm,
-  onCancel
+  onCancel,
+  onSaveData,
 }: {
   task: TaskWithArticles;
   onConfirm: (title: string, extraRequirement: string) => void;
   onCancel: () => void;
+  onSaveData?: (taskId: string, title: string, extraRequirement: string) => void;
 }) {
+  // 优先从数据库字段读取，再读 localStorage（兼容旧数据）
+  const dbTitle = (task as any).user_title || null;
+  const dbExtra = (task as any).extra_requirement || '';
   const articleData = getArticleData(task.id);
-  const [title, setTitle] = useState(() => articleData.title || `${task.city}相关文章`);
-  const [extraRequirement, setExtraRequirement] = useState(articleData.extraRequirement);
+  
+  const [title, setTitle] = useState(() => dbTitle || articleData.title || `${task.city}相关文章`);
+  const [extraRequirement, setExtraRequirement] = useState(dbExtra || articleData.extraRequirement);
 
   return (
     <div style={{ padding: '16px 0' }}>
@@ -334,7 +353,11 @@ function SingleTaskEditor({
         <Button
           type="primary"
           disabled={!title.trim()}
-          onClick={() => onConfirm(title.trim(), extraRequirement.trim())}
+          onClick={() => {
+            // 保存到数据库
+            if (onSaveData) onSaveData(task.id, title.trim(), extraRequirement.trim());
+            onConfirm(title.trim(), extraRequirement.trim());
+          }}
         >
           开始生成
         </Button>
@@ -347,23 +370,31 @@ function SingleTaskEditor({
 function RetryTaskEditor({
   task,
   onConfirm,
-  onCancel
+  onCancel,
+  onSaveData,
 }: {
   task: TaskWithArticles;
   onConfirm: (title: string, extraRequirement: string) => void;
   onCancel: () => void;
+  onSaveData?: (taskId: string, title: string, extraRequirement: string) => void;
 }) {
-  console.log('[调试] RetryTaskEditor 渲染，task.id:', task.id, 'task.city:', task.city);
+  // 优先从数据库字段读取，再读 localStorage（兼容旧数据）
+  const dbTitle = (task as any).user_title || null;
+  const dbExtra = (task as any).extra_requirement || '';
   const articleData = getArticleData(task.id);
-  const [title, setTitle] = useState(articleData.title || `${task.city}相关文章`);
-  const [extraRequirement, setExtraRequirement] = useState(articleData.extraRequirement);
+  
+  const [title, setTitle] = useState(() => dbTitle || articleData.title || `${task.city}相关文章`);
+  const [extraRequirement, setExtraRequirement] = useState(dbExtra || articleData.extraRequirement);
 
-  // 当 task.id 变化时，重新从 localStorage 读取数据
+  // 当 task.id 变化时，重新从数据库（优先）或 localStorage 读取数据
   useEffect(() => {
-    const data = getArticleData(task.id);
-    setTitle(data.title || `${task.city}相关文章`);
-    setExtraRequirement(data.extraRequirement);
-  }, [task.id, task.city]);
+    const dbTitle = (task as any).user_title || null;
+    const dbExtra = (task as any).extra_requirement || '';
+    const localData = getArticleData(task.id);
+    
+    setTitle(dbTitle || localData.title || `${task.city}相关文章`);
+    setExtraRequirement(dbExtra || localData.extraRequirement);
+  }, [task.id, task.city, (task as any).user_title, (task as any).extra_requirement]);
 
   return (
     <div style={{ padding: '16px 0' }}>
@@ -398,7 +429,11 @@ function RetryTaskEditor({
         <Button
           type="primary"
           disabled={!title.trim()}
-          onClick={() => onConfirm(title.trim(), extraRequirement.trim())}
+          onClick={() => {
+            // 保存到数据库
+            if (onSaveData) onSaveData(task.id, title.trim(), extraRequirement.trim());
+            onConfirm(title.trim(), extraRequirement.trim());
+          }}
         >
           重新生成
         </Button>
@@ -973,6 +1008,8 @@ function AiGenerateSection({
   onCancelGeneration,
   websites,
   prompts,
+  onBatchRetry,
+  onBatchSwitchToManual,
 }: {
   tasks: TaskWithArticles[];
   loading: boolean;
@@ -982,8 +1019,13 @@ function AiGenerateSection({
   onCancelGeneration: (taskId: string) => void;
   websites: any[];
   prompts: any[];
+  onBatchRetry?: (taskIds: string[]) => void;
+  onBatchSwitchToManual?: (taskIds: string[]) => void;
 }) {
   const [activeTab, setActiveTab] = useState('generating');
+  
+  // 失败任务的批量选择
+  const [selectedFailedKeys, setSelectedFailedKeys] = useState<React.Key[]>([]);
 
   // 分类任务
   const generatingTasks = tasks.filter(t => t.ai_status === 'pending' || t.ai_status === 'generating');
@@ -1188,7 +1230,70 @@ function AiGenerateSection({
                 {failedTasks.length === 0 ? (
                   <Empty description="暂无生成失败的任务" />
                 ) : (
-                  failedTasks.map(task => renderTaskCard(task))
+                  <>
+                    {/* 批量操作栏 */}
+                    <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Space>
+                        <Button
+                          size="small"
+                          onClick={() => {
+                            if (selectedFailedKeys.length === failedTasks.length) {
+                              setSelectedFailedKeys([]);
+                            } else {
+                              setSelectedFailedKeys(failedTasks.map(t => t.id));
+                            }
+                          }}
+                        >
+                          {selectedFailedKeys.length === failedTasks.length ? '取消全选' : '全选'}
+                        </Button>
+                        {selectedFailedKeys.length > 0 && (
+                          <Text type="secondary">已选 {selectedFailedKeys.length} 项</Text>
+                        )}
+                      </Space>
+                      <Space>
+                        {selectedFailedKeys.length > 0 && (
+                          <>
+                            <Button
+                              type="primary"
+                              size="small"
+                              icon={<SyncOutlined />}
+                              onClick={() => onBatchRetry?.(selectedFailedKeys as string[])}
+                            >
+                              批量重试 ({selectedFailedKeys.length})
+                            </Button>
+                            <Popconfirm
+                              title={`确定将 ${selectedFailedKeys.length} 个任务转为人工吗？`}
+                              description="转人工后文章内容将清空，需重新编辑。"
+                              onConfirm={() => onBatchSwitchToManual?.(selectedFailedKeys as string[])}
+                              okText="确定"
+                              cancelText="取消"
+                            >
+                              <Button size="small" icon={<UserOutlined />} danger>
+                                批量转人工 ({selectedFailedKeys.length})
+                              </Button>
+                            </Popconfirm>
+                          </>
+                        )}
+                      </Space>
+                    </div>
+                    {/* 失败任务列表（带复选框） */}
+                    {failedTasks.map(task => (
+                      <div key={task.id} style={{ position: 'relative' }}>
+                        <Checkbox
+                          checked={selectedFailedKeys.includes(task.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedFailedKeys([...selectedFailedKeys, task.id]);
+                            } else {
+                              setSelectedFailedKeys(selectedFailedKeys.filter(k => k !== task.id));
+                            }
+                          }}
+                          style={{ position: 'absolute', left: -28, top: 12, zIndex: 1 }}
+                        />
+                        {renderTaskCard(task)}
+                      </div>
+                    ))}
+                  </>
                 )}
               </div>
             ),
@@ -1448,7 +1553,7 @@ interface ContentWriterProps {
 }
 
 export default function ContentWriter({ defaultStatus, onOpenSettings }: ContentWriterProps) {
-  const { tasks, loading, error, deleteTask, refreshTasks, switchToAiMode, switchToManualMode, updateAiStatus } = useTasks();
+  const { tasks, loading, error, deleteTask, refreshTasks, switchToAiMode, switchToManualMode, updateAiStatus, updateTaskFields } = useTasks();
   const [selectedTask, setSelectedTask] = useState<TaskWithArticles | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   // defaultStatus 决定显示模式：draft=未生成(人工/AI双Tab), ready=待发布, completed=已完成
@@ -1497,7 +1602,14 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     return groupedByDate;
   }, [tasks]);
 
-  // 批量生成弹窗状态
+  // 保存标题和额外要求到数据库（供编辑器组件使用）
+  const saveTaskDataToDb = async (taskId: string, title: string, extraRequirement: string) => {
+    try {
+      await updateTaskFields(taskId, { user_title: title, extra_requirement: extraRequirement });
+    } catch (err) {
+      console.error('保存到数据库失败:', err);
+    }
+  };
   const [batchModalVisible, setBatchModalVisible] = useState(false);
   const [batchTasks, setBatchTasks] = useState<TaskWithArticles[]>([]);
 
@@ -1642,8 +1754,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                 })
                 .eq('id', task.articles[0].id);
             }
-            // 保存标题和额外要求到浏览器 localStorage
+            // 保存标题和额外要求到浏览器 localStorage（兼容旧数据）
             saveArticleData(task.id, userTitle, extraRequirement);
+            // 保存到数据库
+            await updateTaskFields(task.id, { user_title: userTitle, extra_requirement: extraRequirement });
             // 更新状态为已完成
             await updateAiStatus(task.id, 'completed');
           } else {
@@ -1700,6 +1814,82 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     setRetryModalVisible(true);
   };
 
+  // 批量重试（直接重试，使用数据库中已保存的标题和额外要求）
+  const handleBatchRetry = async (taskIds: string[]) => {
+    const tasksToRetry = tasks.filter(t => taskIds.includes(t.id));
+    message.loading({ content: `正在批量重试 ${tasksToRetry.length} 个任务...`, key: 'batch-retry' });
+    
+    for (const task of tasksToRetry) {
+      try {
+        await updateAiStatus(task.id, 'generating');
+        
+        // 从数据库读取之前保存的标题和额外要求
+        const savedTitle = (task as any).user_title || `${task.city}相关文章`;
+        const savedExtra = (task as any).extra_requirement || '';
+        
+        const response = await fetch('/api/generate-articles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tasks: [{
+              city: task.city,
+              prompt_type: task.prompt_type,
+              writing_suggestions: task.writing_suggestions || '',
+              title: savedTitle,
+              extra_requirement: savedExtra,
+            }],
+          }),
+        });
+
+        const result = await response.json();
+        if (result.success || (result.results && result.results[0]?.success)) {
+          const content = result.results?.[0]?.content;
+          if (content && task.articles.length > 0) {
+            await supabase
+              .from('articles')
+              .update({
+                content: convertNewlinesToHtml(content),
+                status: 'draft',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', task.articles[0].id);
+          }
+          if (task.articles.length > 0) clearArticleDraft(task.articles[0].id);
+          await updateAiStatus(task.id, 'completed');
+        } else {
+          await updateAiStatus(task.id, 'failed');
+        }
+      } catch (err) {
+        console.error(`批量重试失败 [${task.city}]:`, err);
+        try { await updateAiStatus(task.id, 'failed'); } catch {}
+      }
+    }
+    
+    refreshTasks();
+    message.success({ content: `批量重试完成！共 ${tasksToRetry.length} 个任务`, key: 'batch-retry' });
+  };
+
+  // 批量转人工
+  const handleBatchSwitchToManual = async (taskIds: string[]) => {
+    try {
+      await switchToManualMode(taskIds);
+      // 清空文章内容
+      for (const taskId of taskIds) {
+        const task = tasks.find(t => t.id === taskId);
+        if (task && task.articles.length > 0) {
+          await supabase
+            .from('articles')
+            .update({ content: '', status: 'draft', updated_at: new Date().toISOString() } as any)
+            .eq('id', task.articles[0].id);
+        }
+      }
+      message.success(`已成功将 ${taskIds.length} 个任务转为人工生成`);
+      refreshTasks();
+    } catch {
+      message.error('操作失败');
+    }
+  };
+
   // 删除任务
   const handleDeleteTask = (task: TaskWithArticles, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1746,6 +1936,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         <BatchTitleEditor
           tasks={batchTasks}
           onConfirm={handleBatchGenerate}
+          onSaveData={saveTaskDataToDb}
         />
       </Modal>
 
@@ -1765,6 +1956,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
               await generateWithAi([singleTask], [{ title, extraRequirement }]);
             }}
             onCancel={() => setSingleTaskModalVisible(false)}
+            onSaveData={saveTaskDataToDb}
           />
         )}
       </Modal>
@@ -1821,6 +2013,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                       if (task.articles.length > 0) {
                         clearArticleDraft(task.articles[0].id);
                       }
+                      // 保存到数据库
+                      await updateTaskFields(retryTaskId, { user_title: title, extra_requirement: extraRequirement });
                       saveArticleData(retryTaskId, title, extraRequirement);
                       await updateAiStatus(retryTaskId, 'completed');
                       message.success({ content: '重新生成成功！', key: 'retry' });
@@ -1843,6 +2037,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                   }
                 }}
                 onCancel={() => setRetryModalVisible(false)}
+                onSaveData={saveTaskDataToDb}
               />
             )}
           </Modal>
@@ -2033,6 +2228,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                       onCancelGeneration={handleCancelGeneration}
                       websites={websites}
                       prompts={prompts}
+                      onBatchRetry={handleBatchRetry}
+                      onBatchSwitchToManual={handleBatchSwitchToManual}
                     />
                   ),
                 },

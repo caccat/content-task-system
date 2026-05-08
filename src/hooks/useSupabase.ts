@@ -181,7 +181,23 @@ export function useTasks() {
     }
   };
 
-  return { tasks, loading, error, createTask, deleteTask, refreshTasks: fetchTasks, switchToAiMode, switchToManualMode, updateAiStatus };
+  // 更新任务字段（用于保存用户填写的标题和额外要求到数据库）
+  const updateTaskFields = async (taskId: string, fields: { user_title?: string; extra_requirement?: string }) => {
+    const { error } = await supabase
+      .from('tasks')
+      .update({
+        ...fields,
+        updated_at: new Date().toISOString(),
+      } as any)
+      .eq('id', taskId);
+
+    if (error) {
+      console.error('更新任务字段失败:', error);
+      throw error;
+    }
+  };
+
+  return { tasks, loading, error, createTask, deleteTask, refreshTasks: fetchTasks, switchToAiMode, switchToManualMode, updateAiStatus, updateTaskFields };
 }
 
 export function useArticles(taskId?: string) {

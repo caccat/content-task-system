@@ -83,6 +83,10 @@ export interface Task {
   generation_mode: 'manual' | 'ai';
   // 新增：AI生成状态
   ai_status: 'pending' | 'generating' | 'completed' | 'failed' | null;
+  // 新增：用户填写的AI标题（存数据库，替代localStorage）
+  user_title?: string | null;
+  // 新增：用户填写的额外要求（存数据库，替代localStorage）
+  extra_requirement?: string | null;
 }
 
 export const CITIES = [
