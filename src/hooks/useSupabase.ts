@@ -40,12 +40,13 @@ export function useTasks() {
 
   const fetchTasks = useCallback(async () => {
     try {
-      // 先获取任务列表
-      const tasksData = await fetchWithRetry<Task[]>(() =>
-        supabase
+      // 先获取任务列表（带重试）
+      const tasksData = await fetchWithRetry<Task[]>(async () =>
+        (await supabase
           .from('tasks')
           .select('*')
           .order('created_at', { ascending: false })
+        ) as unknown as { data: Task[] | null; error: any }
       );
 
       if (!tasksData) {
@@ -57,11 +58,12 @@ export function useTasks() {
       const taskIds = tasksData.map(t => t.id);
       
       // 再获取文章数据（带重试）
-      const articlesData = await fetchWithRetry<Article[]>(() =>
-        supabase
+      const articlesData = await fetchWithRetry<Article[]>(async () =>
+        (await supabase
           .from('articles')
           .select('*')
           .in('task_id', taskIds)
+        ) as unknown as { data: Article[] | null; error: any }
       );
 
       if (articlesData === undefined || articlesData === null) {
