@@ -383,6 +383,15 @@ function RetryTaskEditor({
   const dbExtra = (task as any).extra_requirement || '';
   const articleData = getArticleData(task.id);
   
+  console.log('[RetryTaskEditor] 初始化数据:', {
+    taskId: task.id,
+    dbTitle,
+    dbExtra,
+    localStorageTitle: articleData.title,
+    localStorageExtra: articleData.extraRequirement,
+    taskKeys: Object.keys(task),
+  });
+  
   const [title, setTitle] = useState(() => dbTitle || articleData.title || `${task.city}相关文章`);
   const [extraRequirement, setExtraRequirement] = useState(dbExtra || articleData.extraRequirement);
 
@@ -391,6 +400,14 @@ function RetryTaskEditor({
     const dbTitle = (task as any).user_title || null;
     const dbExtra = (task as any).extra_requirement || '';
     const localData = getArticleData(task.id);
+    
+    console.log('[RetryTaskEditor] useEffect 更新数据:', {
+      taskId: task.id,
+      dbTitle,
+      dbExtra,
+      localTitle: localData.title,
+      localExtra: localData.extraRequirement,
+    });
     
     setTitle(dbTitle || localData.title || `${task.city}相关文章`);
     setExtraRequirement(dbExtra || localData.extraRequirement);
@@ -1808,9 +1825,41 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   // 重新生成（带标题输入）
   const [retryModalVisible, setRetryModalVisible] = useState(false);
   const [retryTaskId, setRetryTaskId] = useState<string | null>(null);
+  // 存储重新生成任务的最新数据（从DB实时获取）
+  const [retryTaskData, setRetryTaskData] = useState<TaskWithArticles | null>(null);
 
   const handleRetry = async (taskId: string) => {
     setRetryTaskId(taskId);
+    
+    // 从数据库获取该任务的最新数据（确保包含 user_title 和 extra_requirement）
+    try {
+      const { data: taskData, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', taskId)
+        .single();
+      
+      if (error) {
+        console.error('[handleRetry] 获取任务数据失败:', error);
+      } else if (taskData) {
+        console.log('[handleRetry] 从DB获取到最新任务数据:', {
+          taskId,
+          user_title: taskData.user_title,
+          extra_requirement: taskData.extra_requirement,
+        });
+        
+        // 合并articles信息
+        const currentTask = tasks.find(t => t.id === taskId);
+        setRetryTaskData({
+          ...taskData,
+          articles: currentTask?.articles || [],
+          completedCount: currentTask?.completedCount || 0,
+        });
+      }
+    } catch (err) {
+      console.error('[handleRetry] 查询异常:', err);
+    }
+    
     setRetryModalVisible(true);
   };
 
@@ -1963,12 +2012,23 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
 
       {/* 重新生成弹窗 */}
       {retryTaskId && (() => {
-        const task = tasks.find(t => t.id === retryTaskId);
+        // 优先使用从数据库实时获取的数据，否则从 tasks 状态中查找
+        const task = retryTaskData || tasks.find(t => t.id === retryTaskId);
+        console.log('[重新生成弹窗] 渲染task数据:', {
+          retryTaskId,
+          hasRetryTaskData: !!retryTaskData,
+          taskId: task?.id,
+          user_title: (task as any)?.user_title,
+          extra_requirement: (task as any)?.extra_requirement,
+        });
         return (
           <Modal
             title="🤖 重新生成文章"
             open={retryModalVisible}
-            onCancel={() => setRetryModalVisible(false)}
+            onCancel={() => {
+              setRetryModalVisible(false);
+              setRetryTaskData(null); // 关闭时清除缓存数据
+            }}
             footer={null}
             width={500}
           >
