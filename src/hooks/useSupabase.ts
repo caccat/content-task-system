@@ -3,32 +3,41 @@ import { supabase } from '../supabase';
 import type { Task, Article, TaskWithArticles } from '../types';
 
 // 带超时和重试的请求包装器（解决 Supabase 超时问题）
+// allowFailure=true 时失败返回 null 而不是抛出异常
 async function fetchWithRetry<T>(
   fn: () => Promise<{ data: T | null; error: any }>,
   maxRetries = 3,
   delayMs = 2000,
+  allowFailure = false, // 允许失败则返回null
 ): Promise<T | null> {
+  let lastError: any;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const result = await fn();
       if (result.error) {
+        lastError = result.error;
         // 如果是超时错误且还有重试次数，等待后重试
         if ((result.error.code === '57014' || result.error.code === 'PGRST301') && attempt < maxRetries - 1) {
           console.warn(`[fetchWithRetry] 超时，${delayMs}ms 后重试 (${attempt + 1}/${maxRetries})...`);
           await new Promise(r => setTimeout(r, delayMs * (attempt + 1)));
           continue;
         }
-        throw result.error;
+        if (!allowFailure) throw result.error;
       }
       return result.data as T;
     } catch (err) {
+      lastError = err;
       if (attempt < maxRetries - 1) {
         console.warn(`[fetchWithRetry] 请求失败，重试中...`, err);
         await new Promise(r => setTimeout(r, delayMs * (attempt + 1)));
         continue;
       }
-      throw err;
+      if (!allowFailure) throw err;
     }
+  }
+  if (allowFailure) {
+    console.warn('[fetchWithRetry] 所有重试失败，允许降级返回null:', lastError?.message);
+    return null;
   }
   return null;
 }
@@ -40,13 +49,14 @@ export function useTasks() {
 
   const fetchTasks = useCallback(async () => {
     try {
-      // 先获取任务列表（带重试）
+      // 先获取任务列表（带重试，不允许失败）
       const tasksData = await fetchWithRetry<Task[]>(async () =>
         (await supabase
           .from('tasks')
           .select('*')
           .order('created_at', { ascending: false })
-        ) as unknown as { data: Task[] | null; error: any }
+        ) as unknown as { data: Task[] | null; error: any },
+        3, 2000, false
       );
 
       if (!tasksData) {
@@ -57,18 +67,19 @@ export function useTasks() {
 
       const taskIds = tasksData.map(t => t.id);
       
-      // 再获取文章数据（带重试）
-      const articlesData = await fetchWithRetry<Article[]>(async () =>
+      // 再获取文章数据（允许失败降级）
+      const articlesData = await fetchWithRetry<any[]>(async () =>
         (await supabase
           .from('articles')
-          .select('*')
+          .select('id,task_id,status,published_at,published_by') // 不拉content大字段
           .in('task_id', taskIds)
-        ) as unknown as { data: Article[] | null; error: any }
+        ) as unknown as { data: any[] | null; error: any },
+        2, 2000, true // 只重试2次，允许失败降级
       );
 
-      if (articlesData === undefined || articlesData === null) {
-        // 文章获取失败但不阻塞任务显示（降级处理）
-        console.warn('[useTasks] 获取文章失败，以空数组继续');
+      // 无论成功失败都继续显示任务
+      if (!articlesData) {
+        console.warn('[useTasks] 文章数据获取失败，以空数组继续显示任务');
       }
 
       const tasksWithArticles: TaskWithArticles[] = tasksData.map(task => {
