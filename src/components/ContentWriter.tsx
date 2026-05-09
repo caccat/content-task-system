@@ -1852,23 +1852,11 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                   })
                   .eq('id', existingArticles[0].id);
               } else {
-                // 确实没有文章，才创建新的
-                console.log('[generateWithAi] 确认无文章记录，创建新文章:', { taskId: task.id, contentLen: articleContent.length });
-                const { data: newArticle, error: insertErr } = await supabase
-                  .from('articles')
-                  .insert({
-                    task_id: task.id,
-                    content: convertNewlinesToHtml(articleContent),
-                    status: 'draft',
-                  })
-                  .select()
-                  .single();
-                
-                if (insertErr) {
-                  console.error('[generateWithAi] 创建文章失败:', insertErr);
-                } else {
-                  console.log('[generateWithAi] 创建文章成功:', newArticle?.id);
-                }
+                // ⚠️ 创建任务时已根据 quantity 创建了文章记录，这里不应再创建
+                // 如果走到这里说明 DB 中确实没有该任务的文章，可能是异常情况
+                console.error('[generateWithAi] ❌ 严重: 未找到文章且不创建新文章! taskId=', task.id,
+                  '原因: createTask 时应已创建文章记录，此处缺失可能是数据库异常');
+                message.error(`${task.city}: 文章记录丢失，无法保存AI生成内容，请检查数据库`);
               }
             } else {
               console.warn('[generateWithAi] 跳过保存: articleContent=', !!articleContent, 'articlesCount=', task.articles.length);
@@ -2227,15 +2215,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                             })
                             .eq('id', existingArticles[0].id);
                         } else {
-                          // 没找到，创建新文章
-                          console.log('[重新生成] 创建新文章:', { taskId: retryTaskId, contentLen: content.length });
-                          await supabase
-                            .from('articles')
-                            .insert({
-                              task_id: retryTaskId,
-                              content: convertNewlinesToHtml(content),
-                              status: 'draft',
-                            });
+                          // ⚠️ 创建任务时已根据 quantity 创建了文章记录，这里不应再创建
+                          console.error('[重新生成] ❌ 严重: 未找到文章且不创建新文章! taskId=', retryTaskId,
+                            '原因: createTask 时应已创建文章记录，此处缺失可能是数据库异常');
+                          message.error(`文章记录丢失，无法保存重新生成的内容，请检查数据库`);
                         }
                       } else {
                         console.warn('[重新生成] 跳过保存: content=', !!content, 'articlesCount=', task.articles?.length || 0);
