@@ -566,8 +566,8 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   const handleEdit = async (article: Article) => {
     // 设置编辑加载锁，防止 articles 同步 effect 覆盖内容
     editLoadLockRef.current = true;
-    // 3 秒后释放锁，允许后续同步
-    setTimeout(() => { editLoadLockRef.current = false; }, 3000);
+    // 5 秒后释放锁
+    setTimeout(() => { editLoadLockRef.current = false; }, 5000);
     
     // 从最新的 articles 列表中获取数据，确保使用的是最新内容
     let latestArticle = articles.find(a => a.id === article.id) || article;
@@ -592,28 +592,25 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
       }
     }
     
-    console.log('[ArticleEditor.handleEdit] 编辑文章:', {
-      articleId: article.id,
-      articlesCount: articles.length,
-      latestContentLength: latestArticle?.content?.length || 0,
-      hasContent: !!latestArticle?.content,
-      contentPreview: latestArticle?.content?.substring(0, 100),
-      editLockActive: true,  // 标记锁已激活
-    });
-    
-    setEditingArticle(latestArticle);
     // 优先读取自动保存的草稿，否则用数据库内容
     const draft = getArticleDraft(article.id);
     const initialContent = draft || latestArticle.content || '';
     
-    console.log('[ArticleEditor.handleEdit] 设置内容:', {
-      hasDraft: !!draft,
+    console.log('[ArticleEditor.handleEdit]', {
+      articleId: article.id,
+      dbContentLength: latestArticle?.content?.length || 0,
       initialContentLength: initialContent.length,
-      contentPreview: initialContent.substring(0, 100),
+      hasDraft: !!draft,
+      lockActive: true,
     });
     
+    // 【关键】先设置 content，再设置 editingArticle！
+    // 这样当 effect 触发时，content 已经是正确的值
     setContent(initialContent);
-    originalContentRef.current = initialContent; // 更新原始内容
+    originalContentRef.current = initialContent;
+    
+    // 最后才触发 editingArticle 变化（这会打开 Modal 并重建 RichTextEditor）
+    setEditingArticle(latestArticle);
   };
 
   const handleSave = async () => {
@@ -800,7 +797,9 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
         )}
       />
 
+      {/* key 强制每次打开不同文章时完整重建 Modal 和编辑器，避免状态残留 */}
       <Modal
+        key={editingArticle?.id || 'article-editor'}
         title={`编辑文章 ${editingArticle && articles ? articles.findIndex(a => a.id === editingArticle.id) + 1 : ''}`}
         open={!!editingArticle}
         onCancel={() => setEditingArticle(null)}
@@ -809,6 +808,7 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
         okText="保存"
         cancelText="取消"
         styles={{ body: { paddingBottom: 60 } }}
+        destroyOnHidden  // 关闭时销毁内容
       >
         <RichTextEditor
           value={content}
