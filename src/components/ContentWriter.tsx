@@ -1826,23 +1826,49 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
               } else {
                 console.log('[generateWithAi] 文章更新成功');
               }
-            } else if (articleContent && task.articles.length === 0) {
-              // 情况2：没有文章记录（可能被清空了），创建新文章
-              console.log('[generateWithAi] 无文章记录，创建新文章:', { taskId: task.id, contentLen: articleContent.length });
-              const { data: newArticle, error: insertErr } = await supabase
-                .from('articles')
-                .insert({
-                  task_id: task.id,
-                  content: convertNewlinesToHtml(articleContent),
-                  status: 'draft',
-                })
-                .select()
-                .single();
+            } else if (articleContent && (!task.articles || task.articles.length === 0)) {
+              // 情况2：task.articles 为空（可能因为400查询失败），先查找 DB 中是否已有文章
+              console.log('[generateWithAi] task.articles 为空，尝试按 task_id 查找文章:', { taskId: task.id });
               
-              if (insertErr) {
-                console.error('[generateWithAi] 创建文章失败:', insertErr);
+              const { data: existingArticles, error: findErr } = await supabase
+                .from('articles')
+                .select('id')
+                .eq('task_id', task.id)
+                .limit(1);
+              
+              if (findErr) {
+                console.error('[generateWithAi] 查找文章失败:', findErr);
+              }
+              
+              if (existingArticles && existingArticles.length > 0) {
+                // 找到已有文章，更新它而不是创建新的
+                console.log('[generateWithAi] 找到已有文章，更新内容:', existingArticles[0].id);
+                await supabase
+                  .from('articles')
+                  .update({
+                    content: convertNewlinesToHtml(articleContent),
+                    status: 'draft',
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', existingArticles[0].id);
               } else {
-                console.log('[generateWithAi] 创建文章成功:', newArticle?.id);
+                // 确实没有文章，才创建新的
+                console.log('[generateWithAi] 确认无文章记录，创建新文章:', { taskId: task.id, contentLen: articleContent.length });
+                const { data: newArticle, error: insertErr } = await supabase
+                  .from('articles')
+                  .insert({
+                    task_id: task.id,
+                    content: convertNewlinesToHtml(articleContent),
+                    status: 'draft',
+                  })
+                  .select()
+                  .single();
+                
+                if (insertErr) {
+                  console.error('[generateWithAi] 创建文章失败:', insertErr);
+                } else {
+                  console.log('[generateWithAi] 创建文章成功:', newArticle?.id);
+                }
               }
             } else {
               console.warn('[generateWithAi] 跳过保存: articleContent=', !!articleContent, 'articlesCount=', task.articles.length);
