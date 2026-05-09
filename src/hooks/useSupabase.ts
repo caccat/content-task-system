@@ -265,7 +265,7 @@ export function useArticles(taskId?: string) {
       if (error) {
         console.error(`[useArticles] 查询失败 (${retryCount + 1}/3):`, error);
         // 超时或网络错误时自动重试
-        if ((error.code === '57014' || error.status >= 400) && retryCount < 2) {
+        if (error.code === '57014' && retryCount < 2) {
           setTimeout(() => fetchArticles(retryCount + 1), 2000 * (retryCount + 1));
           return;
         }
