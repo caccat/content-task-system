@@ -222,12 +222,32 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
 
   // 使用 useEffect 设置初始内容，避免 dangerouslySetInnerHTML 导致的中文输入问题
   useEffect(() => {
+    console.log('[RichTextEditor] useEffect 触发:', {
+      hasEditorRef: !!editorRef.current,
+      mounted,
+      isHtmlMode,
+      valueLength: value?.length || 0,
+      isUndoing: isUndoingRef.current,
+      innerHTMLLength: editorRef.current?.innerHTML?.length || 0,
+      innerHTMLPreview: editorRef.current?.innerHTML?.substring(0, 50),
+    });
+    
     if (editorRef.current && mounted && !isHtmlMode) {
       // 只在值与当前内容不同时更新，避免光标跳动
       // 撤销操作时不更新，避免覆盖撤销的内容
       if (!isUndoingRef.current && editorRef.current.innerHTML !== value) {
+        console.log('[RichTextEditor] 设置 innerHTML, 长度:', value?.length || 0);
         editorRef.current.innerHTML = value;
       }
+    } else if (mounted && !isHtmlMode && !editorRef.current) {
+      // editorRef 还没准备好，延迟重试
+      console.log('[RichTextEditor] editorRef 未就绪，延迟重试');
+      setTimeout(() => {
+        if (editorRef.current && !isHtmlMode) {
+          console.log('[RichTextEditor] 延迟重试成功，设置 innerHTML, 长度:', value?.length || 0);
+          editorRef.current.innerHTML = value;
+        }
+      }, 100);
     }
   }, [value, mounted, isHtmlMode]);
 
