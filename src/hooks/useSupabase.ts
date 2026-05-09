@@ -71,7 +71,7 @@ export function useTasks() {
       const articlesData = await fetchWithRetry<any[]>(async () =>
         (await supabase
           .from('articles')
-          .select('id,task_id,status,published_at,published_by') // 不拉content大字段
+          .select('*')
           .in('task_id', taskIds)
         ) as unknown as { data: any[] | null; error: any },
         2, 2000, true // 只重试2次，允许失败降级
