@@ -524,9 +524,12 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
     }
   }, [visible, refreshArticles]);
 
+  // 编辑加载锁 - 防止打开编辑器时被 articles 同步 effect 覆盖内容
+  const editLoadLockRef = useRef(false);
+
   // 当 articles 数据更新时，如果正在编辑的文章有变化，更新编辑内容
   useEffect(() => {
-    if (editingArticle) {
+    if (editingArticle && !editLoadLockRef.current) {
       const latestArticle = articles.find(a => a.id === editingArticle.id);
       if (latestArticle && latestArticle.content !== editingArticle.content) {
         // 文章内容已更新，提示用户
@@ -561,6 +564,11 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   }, [content, editingArticle]);
 
   const handleEdit = async (article: Article) => {
+    // 设置编辑加载锁，防止 articles 同步 effect 覆盖内容
+    editLoadLockRef.current = true;
+    // 3 秒后释放锁，允许后续同步
+    setTimeout(() => { editLoadLockRef.current = false; }, 3000);
+    
     // 从最新的 articles 列表中获取数据，确保使用的是最新内容
     let latestArticle = articles.find(a => a.id === article.id) || article;
     
@@ -590,6 +598,7 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
       latestContentLength: latestArticle?.content?.length || 0,
       hasContent: !!latestArticle?.content,
       contentPreview: latestArticle?.content?.substring(0, 100),
+      editLockActive: true,  // 标记锁已激活
     });
     
     setEditingArticle(latestArticle);
