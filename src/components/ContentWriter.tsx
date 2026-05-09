@@ -2140,10 +2140,27 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                     });
 
                     const result = await response.json();
+                    
+                    console.log('[重新生成] API返回结果:', {
+                      taskId: retryTaskId,
+                      success: result.success,
+                      resultsCount: result.results?.length,
+                      firstResultSuccess: result.results?.[0]?.success,
+                      firstResultContentLength: result.results?.[0]?.content?.length,
+                      firstResultError: result.results?.[0]?.error,
+                      taskArticlesCount: task.articles?.length || 0,
+                      taskArticleIds: task.articles?.map(a => a.id) || [],
+                    });
+
                     if (result.success || (result.results && result.results[0]?.success)) {
                       const content = result.results?.[0]?.content;
-                      if (content && task.articles.length > 0) {
-                        await supabase
+                      
+                      if (content && task.articles && task.articles.length > 0) {
+                        console.log('[重新生成] 更新已有文章:', { 
+                          articleId: task.articles[0].id, 
+                          contentLen: content.length 
+                        });
+                        const { error } = await supabase
                           .from('articles')
                           .update({
                             content: convertNewlinesToHtml(content),
@@ -2151,9 +2168,55 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                             updated_at: new Date().toISOString(),
                           })
                           .eq('id', task.articles[0].id);
+                        
+                        if (error) {
+                          console.error('[重新生成] 文章更新失败:', error);
+                        } else {
+                          console.log('[重新生成] 文章更新成功');
+                        }
+                      } else if (content) {
+                        // task.articles 为空（可能因为 400 查询失败），尝试查找或创建文章
+                        console.log('[重新生成] task.articles 为空，尝试查找文章:', { taskId: retryTaskId });
+                        
+                        // 先按 task_id 查找已有的文章
+                        const { data: existingArticles, error: findErr } = await supabase
+                          .from('articles')
+                          .select('id')
+                          .eq('task_id', retryTaskId)
+                          .limit(1);
+
+                        if (findErr) {
+                          console.error('[重新生成] 查找文章失败:', findErr);
+                        }
+                        
+                        if (existingArticles && existingArticles.length > 0) {
+                          // 找到已有文章，更新它
+                          console.log('[重新生成] 找到已有文章，更新内容:', existingArticles[0].id);
+                          await supabase
+                            .from('articles')
+                            .update({
+                              content: convertNewlinesToHtml(content),
+                              status: 'draft',
+                              updated_at: new Date().toISOString(),
+                            })
+                            .eq('id', existingArticles[0].id);
+                        } else {
+                          // 没找到，创建新文章
+                          console.log('[重新生成] 创建新文章:', { taskId: retryTaskId, contentLen: content.length });
+                          await supabase
+                            .from('articles')
+                            .insert({
+                              task_id: retryTaskId,
+                              content: convertNewlinesToHtml(content),
+                              status: 'draft',
+                            });
+                        }
+                      } else {
+                        console.warn('[重新生成] 跳过保存: content=', !!content, 'articlesCount=', task.articles?.length || 0);
                       }
+                      
                       // 清除旧草稿，因为文章内容已经更新
-                      if (task.articles.length > 0) {
+                      if (task.articles && task.articles.length > 0) {
                         clearArticleDraft(task.articles[0].id);
                       }
                       // 保存到数据库
