@@ -560,9 +560,29 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
     };
   }, [content, editingArticle]);
 
-  const handleEdit = (article: Article) => {
+  const handleEdit = async (article: Article) => {
     // 从最新的 articles 列表中获取数据，确保使用的是最新内容
-    const latestArticle = articles.find(a => a.id === article.id) || article;
+    let latestArticle = articles.find(a => a.id === article.id) || article;
+    
+    // 如果 articles 为空或文章没有 content，直接从 DB 单条查询（绕过批量查询的 400 问题）
+    if (!latestArticle.content || articles.length === 0) {
+      try {
+        console.log('[ArticleEditor.handleEdit] articles 为空/无内容，直接查 DB:', article.id);
+        const { data, error } = await supabase
+          .from('articles')
+          .select('*')
+          .eq('id', article.id)
+          .single();
+        if (data && !error) {
+          console.log('[ArticleEditor.handleEdit] DB 直接查询成功:', { contentLength: data.content?.length || 0 });
+          latestArticle = data as Article;
+        } else {
+          console.error('[ArticleEditor.handleEdit] DB 直接查询失败:', error);
+        }
+      } catch (err) {
+        console.error('[ArticleEditor.handleEdit] DB 查询异常:', err);
+      }
+    }
     
     console.log('[ArticleEditor.handleEdit] 编辑文章:', {
       articleId: article.id,
