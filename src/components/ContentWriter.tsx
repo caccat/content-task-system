@@ -516,6 +516,8 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   const [selectedPrompt, setSelectedPrompt] = useState<any>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const originalContentRef = useRef<string>(''); // 记录打开时的原始内容
+  // 独立的编辑内容标记，用于区分"初始加载"和"用户编辑"
+  const editingArticleIdRef = useRef<string | null>(null);
 
   // 当弹窗打开时，重新获取最新文章数据
   useEffect(() => {
@@ -524,24 +526,34 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
     }
   }, [visible, refreshArticles]);
 
-  // 编辑加载锁 - 防止打开编辑器时被 articles 同步 effect 覆盖内容
-  const editLoadLockRef = useRef(false);
-
-  // 当 articles 数据更新时，如果正在编辑的文章有变化，更新编辑内容
+  // 【核心】当 editingArticle 变化时，从文章对象自身设置内容（不依赖 articles 数组）
+  // 使用 editingArticleIdRef 防止重复设置
   useEffect(() => {
-    if (editingArticle && !editLoadLockRef.current) {
-      const latestArticle = articles.find(a => a.id === editingArticle.id);
-      if (latestArticle && latestArticle.content !== editingArticle.content) {
-        // 文章内容已更新，提示用户
-        const draft = getArticleDraft(editingArticle.id);
-        if (!draft) {
-          // 没有草稿，直接使用最新内容
-          setContent(latestArticle.content);
-          originalContentRef.current = latestArticle.content;
-        }
-      }
+    if (editingArticle && editingArticle.id !== editingArticleIdRef.current) {
+      console.log('[ArticleEditor] editingArticle 变化，从文章对象加载内容:', {
+        id: editingArticle.id,
+        contentLength: editingArticle.content?.length || 0,
+      });
+      const newContent = editingArticle.content || '';
+      // 优先使用草稿
+      const draft = getArticleDraft(editingArticle.id);
+      const finalContent = draft || newContent;
+      
+      setContent(finalContent);
+      originalContentRef.current = finalContent;
+      editingArticleIdRef.current = editingArticle.id;
+      
+      console.log('[ArticleEditor] 内容已加载:', { 
+        hasDraft: !!draft,
+        length: finalContent.length,
+      });
     }
-  }, [articles, editingArticle]);
+    
+    // 当编辑器关闭时重置
+    if (!editingArticle) {
+      editingArticleIdRef.current = null;
+    }
+  }, [editingArticle?.id]);
 
   // 自动保存草稿（防抖 2 秒）
   useEffect(() => {
@@ -564,53 +576,28 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   }, [content, editingArticle]);
 
   const handleEdit = async (article: Article) => {
-    // 设置编辑加载锁，防止 articles 同步 effect 覆盖内容
-    editLoadLockRef.current = true;
-    // 5 秒后释放锁
-    setTimeout(() => { editLoadLockRef.current = false; }, 5000);
+    console.log('[ArticleEditor.handleEdit] 开始编辑:', article.id);
     
-    // 从最新的 articles 列表中获取数据，确保使用的是最新内容
-    let latestArticle = articles.find(a => a.id === article.id) || article;
-    
-    // 如果 articles 为空或文章没有 content，直接从 DB 单条查询（绕过批量查询的 400 问题）
-    if (!latestArticle.content || articles.length === 0) {
-      try {
-        console.log('[ArticleEditor.handleEdit] articles 为空/无内容，直接查 DB:', article.id);
-        const { data, error } = await supabase
-          .from('articles')
-          .select('*')
-          .eq('id', article.id)
-          .single();
-        if (data && !error) {
-          console.log('[ArticleEditor.handleEdit] DB 直接查询成功:', { contentLength: data.content?.length || 0 });
-          latestArticle = data as Article;
-        } else {
-          console.error('[ArticleEditor.handleEdit] DB 直接查询失败:', error);
-        }
-      } catch (err) {
-        console.error('[ArticleEditor.handleEdit] DB 查询异常:', err);
+    // 始终从 DB 直接查询最新内容（绕过 articles 数组的 400 问题）
+    try {
+      const { data, error } = await supabase
+        .from('articles')
+        .select('*')
+        .eq('id', article.id)
+        .single();
+      
+      if (data && !error) {
+        console.log('[ArticleEditor.handleEdit] DB 查询成功，content 长度:', data.content?.length || 0);
+        setEditingArticle(data as Article);
+        return;
       }
+      console.error('[ArticleEditor.handleEdit] DB 失败，使用传入的 article:', error);
+    } catch (err) {
+      console.error('[ArticleEditor.handleEdit] 异常:', err);
     }
-    
-    // 优先读取自动保存的草稿，否则用数据库内容
-    const draft = getArticleDraft(article.id);
-    const initialContent = draft || latestArticle.content || '';
-    
-    console.log('[ArticleEditor.handleEdit]', {
-      articleId: article.id,
-      dbContentLength: latestArticle?.content?.length || 0,
-      initialContentLength: initialContent.length,
-      hasDraft: !!draft,
-      lockActive: true,
-    });
-    
-    // 【关键】先设置 content，再设置 editingArticle！
-    // 这样当 effect 触发时，content 已经是正确的值
-    setContent(initialContent);
-    originalContentRef.current = initialContent;
-    
-    // 最后才触发 editingArticle 变化（这会打开 Modal 并重建 RichTextEditor）
-    setEditingArticle(latestArticle);
+
+    // DB 失败时 fallback 到传入的文章对象
+    setEditingArticle(article);
   };
 
   const handleSave = async () => {
