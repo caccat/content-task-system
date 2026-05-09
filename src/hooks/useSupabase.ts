@@ -251,22 +251,41 @@ export function useArticles(taskId?: string) {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchArticles = useCallback(async () => {
+  // 带重试的文章查询
+  const fetchArticles = useCallback(async (retryCount = 0) => {
     if (!taskId) return;
 
-    const { data, error } = await supabase
-      .from('articles')
-      .select('*')
-      .eq('task_id', taskId)
-      .order('created_at', { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from('articles')
+        .select('*')
+        .eq('task_id', taskId)
+        .order('created_at', { ascending: true });
 
-    if (error) {
-      console.error('Error fetching articles:', error);
-      return;
+      if (error) {
+        console.error(`[useArticles] 查询失败 (${retryCount + 1}/3):`, error);
+        // 超时或网络错误时自动重试
+        if ((error.code === '57014' || error.status >= 400) && retryCount < 2) {
+          setTimeout(() => fetchArticles(retryCount + 1), 2000 * (retryCount + 1));
+          return;
+        }
+        return;
+      }
+
+      console.log(`[useArticles] 查询成功:`, {
+        taskId,
+        articleCount: data?.length || 0,
+        firstArticleContentLength: data?.[0]?.content?.length || 0,
+      });
+
+      setArticles((data as Article[]) || []);
+      setLoading(false);
+    } catch (err) {
+      console.error('[useArticles] 异常:', err);
+      if (retryCount < 2) {
+        setTimeout(() => fetchArticles(retryCount + 1), 2000 * (retryCount + 1));
+      }
     }
-
-    setArticles((data as Article[]) || []);
-    setLoading(false);
   }, [taskId]);
 
   useEffect(() => {

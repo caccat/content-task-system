@@ -563,10 +563,26 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
   const handleEdit = (article: Article) => {
     // 从最新的 articles 列表中获取数据，确保使用的是最新内容
     const latestArticle = articles.find(a => a.id === article.id) || article;
+    
+    console.log('[ArticleEditor.handleEdit] 编辑文章:', {
+      articleId: article.id,
+      articlesCount: articles.length,
+      latestContentLength: latestArticle?.content?.length || 0,
+      hasContent: !!latestArticle?.content,
+      contentPreview: latestArticle?.content?.substring(0, 100),
+    });
+    
     setEditingArticle(latestArticle);
     // 优先读取自动保存的草稿，否则用数据库内容
     const draft = getArticleDraft(article.id);
-    const initialContent = draft || latestArticle.content;
+    const initialContent = draft || latestArticle.content || '';
+    
+    console.log('[ArticleEditor.handleEdit] 设置内容:', {
+      hasDraft: !!draft,
+      initialContentLength: initialContent.length,
+      contentPreview: initialContent.substring(0, 100),
+    });
+    
     setContent(initialContent);
     originalContentRef.current = initialContent; // 更新原始内容
   };
