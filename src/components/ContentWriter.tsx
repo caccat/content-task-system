@@ -1616,31 +1616,19 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   const [filterPromptType, setFilterPromptType] = useState<string | undefined>(undefined);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
 
-  // 计算逾期任务（截止日期早于今天且未完成的任务，按人工/AI模式分别统计）
+  // 计算逾期任务（截止日期早于今天且在「未生成」列表中的任务）
+  // 过滤逻辑与 manualTasks / aiTasks 完全一致（仅额外加 deadline.isBefore 条件）
   const overdueTasksInfo = useMemo(() => {
     const today = dayjs().startOf('day');
     const overdueTasks = tasks.filter(task => {
       const deadline = dayjs(task.deadline).startOf('day');
       // 截止日期早于今天
       if (!deadline.isBefore(today)) return false;
-      // 已全部发布的任务不算逾期
+      // 已全部发布的任务不算逾期（已完成列表）
       if (task.articles.length > 0 && task.articles.every(a => a.status === 'published')) return false;
-
-      // 人工模式：与 manualTasks 过滤一致 — 排除已完成 + 有ready/published文章
-      if (task.generation_mode === 'manual') {
-        if (task.status === 'completed') return false;
-        if (task.articles.length > 0 && task.articles.some(a => a.status === 'ready' || a.status === 'published')) return false;
-        if (task.completedCount >= task.quantity) return false;
-        return true;
-      }
-
-      // AI模式：与 aiTasks 过滤一致 — 只排除全部文章已published的任务
-      if (task.generation_mode === 'ai') {
-        if (task.articles.length > 0 && task.articles.every(a => a.status === 'published')) return false;
-        if (task.completedCount >= task.quantity) return false;
-        return true;
-      }
-
+      // 兜底：completedCount 达到 quantity 也排除
+      if (task.completedCount >= task.quantity) return false;
+      // 其余所有任务都算未生成 — 与 aiTasks / manualTabs 逻辑完全一致
       return true;
     });
 
