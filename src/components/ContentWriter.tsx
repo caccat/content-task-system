@@ -1616,23 +1616,23 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   const [filterPromptType, setFilterPromptType] = useState<string | undefined>(undefined);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
 
-  // 计算逾期任务（截止日期早于今天且在「未生成」列表中的任务）
-  // 过滤逻辑与 manualTasks / aiTasks 完全一致（仅额外加 deadline.isBefore 条件）
+  // 计算逾期任务（截止日期早于今天且在「未生成」/「待发布」列表中的任务）
+  // 过滤逻辑与 manualTasks / aiTasks + readyTasks 完全一致（仅额外加 deadline.isBefore 条件）
   const overdueTasksInfo = useMemo(() => {
     const today = dayjs().startOf('day');
     const overdueTasks = tasks.filter(task => {
       const deadline = dayjs(task.deadline).startOf('day');
       // 截止日期早于今天
       if (!deadline.isBefore(today)) return false;
-      // 已全部发布的任务不算逾期（已完成列表）
+      // 全部已发布的任务不计入逾期（已完成列表）
       if (task.articles.length > 0 && task.articles.every(a => a.status === 'published')) return false;
       // 兜底：completedCount 达到 quantity 也排除
       if (task.completedCount >= task.quantity) return false;
-      // 其余所有任务都算未生成 — 与 aiTasks / manualTabs 逻辑完全一致
+      // 其余所有任务都算 — 与 readyTasks / aiTasks / manualTasks 逻辑一致
       return true;
     });
 
-    // 按逾期日期分组，同时区分人工/AI 模式
+    // 按逾期日期分组，避免与 readyTasks 重叠计数：有 ready 文章的任务归入待发布，其余归入未生成
     const groupedByDate: Record<string, { date: dayjs.Dayjs; manualCount: number; aiCount: number; readyCount: number }> = {};
     overdueTasks.forEach(task => {
       const deadline = dayjs(task.deadline);
@@ -1641,25 +1641,20 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         groupedByDate[dateKey] = { date: deadline, manualCount: 0, aiCount: 0, readyCount: 0 };
       }
       
-      // 按生成模式分别计数（用任务数而非文章数量，与下方列表一致）
-      if (task.generation_mode === 'manual') {
-        groupedByDate[dateKey].manualCount += 1;
-      } else if (task.generation_mode === 'ai') {
-        groupedByDate[dateKey].aiCount += 1;
+      // 判断是否有 ready 文章 → 归入待发布
+      const hasReady = task.articles.some(a => a.status === 'ready');
+      
+      if (hasReady) {
+        // 有 ready 文章 → 以任务数计入选为「待发布」数量
+        groupedByDate[dateKey].readyCount += 1;
+      } else {
+        // 没有 ready 文章 → 归入未生成，按模式计数
+        if (task.generation_mode === 'manual') {
+          groupedByDate[dateKey].manualCount += 1;
+        } else if (task.generation_mode === 'ai') {
+          groupedByDate[dateKey].aiCount += 1;
+        }
       }
-      
-      // 统计待发布数量
-      const ready = task.articles.filter(a => a.status === 'ready').length;
-      groupedByDate[dateKey].readyCount += ready;
-      
-      console.log('[逾期统计]', { 
-        city: task.city, 
-        deadline: task.deadline, 
-        mode: task.generation_mode,
-        aiStatus: task.ai_status,
-        articlesLength: task.articles.length,
-        articleStatuses: task.articles.map(a => a.status),
-      });
     });
 
     return groupedByDate;
@@ -1680,13 +1675,14 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   const [singleTaskModalVisible, setSingleTaskModalVisible] = useState(false);
   const [singleTask, setSingleTask] = useState<TaskWithArticles | null>(null);
 
-  // 分类任务（仅针对未生成页面）：显示所有尚未完全发布的任务
+  // 分类任务（仅针对未生成页面）：显示尚未有任何 ready/published 文章的任务
+  // 一旦有文章 ready，任务就去「待发布」，避免与 readyTasks 重叠计数
   const manualTasks = useMemo(() => {
     return tasks.filter(task => {
       // 只显示人工模式的任务
       if (task.generation_mode !== 'manual') return false;
-      // 只排除所有文章都已发布的任务（这些去已完成列表）
-      if (task.articles.length > 0 && task.articles.every(a => a.status === 'published')) return false;
+      // 有 ready/published 文章的任务应去「待发布」
+      if (task.articles.length > 0 && task.articles.some(a => a.status === 'ready' || a.status === 'published')) return false;
       // 兜底：completedCount 达到 quantity 也排除
       if (task.completedCount >= task.quantity) return false;
       // 日期筛选
@@ -1701,8 +1697,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     return tasks.filter(task => {
       // 只显示AI模式的任务
       if (task.generation_mode !== 'ai') return false;
-      // 只排除所有文章都已发布的任务（这些去已完成列表）
-      if (task.articles.length > 0 && task.articles.every(a => a.status === 'published')) return false;
+      // 有 ready/published 文章的任务应去「待发布」
+      if (task.articles.length > 0 && task.articles.some(a => a.status === 'ready' || a.status === 'published')) return false;
       // 兜底：completedCount 达到 quantity 也排除
       if (task.completedCount >= task.quantity) return false;
       // 日期筛选
