@@ -1616,7 +1616,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   const [filterPromptType, setFilterPromptType] = useState<string | undefined>(undefined);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
 
-  // 计算逾期任务（截止日期早于今天且未完成的任务）
+  // 计算逾期任务（截止日期早于今天且未完成的任务，按人工/AI模式分别统计）
   const overdueTasksInfo = useMemo(() => {
     const today = dayjs().startOf('day');
     const overdueTasks = tasks.filter(task => {
@@ -1624,28 +1624,37 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
       // 截止日期早于今天
       if (!deadline.isBefore(today)) return false;
       // 未完成的任务（有未发布的文章）
-      const hasIncompleteArticle = task.articles.some(a => a.status !== 'published');
-      return hasIncompleteArticle;
+      if (task.articles.length > 0 && task.articles.every(a => a.status === 'published')) return false;
+      return true;
     });
 
-    // 按逾期日期分组
-    const groupedByDate: Record<string, { date: dayjs.Dayjs; ungeneratedCount: number; readyCount: number }> = {};
+    // 按逾期日期分组，同时区分人工/AI 模式
+    const groupedByDate: Record<string, { date: dayjs.Dayjs; manualCount: number; aiCount: number; readyCount: number }> = {};
     overdueTasks.forEach(task => {
       const deadline = dayjs(task.deadline);
       const dateKey = deadline.format('M月D日');
       if (!groupedByDate[dateKey]) {
-        groupedByDate[dateKey] = { date: deadline, ungeneratedCount: 0, readyCount: 0 };
+        groupedByDate[dateKey] = { date: deadline, manualCount: 0, aiCount: 0, readyCount: 0 };
       }
       
-      // 统计未生成和待发布
+      // 按生成模式分别计数（用任务数而非文章数量，与下方列表一致）
+      if (task.generation_mode === 'manual') {
+        groupedByDate[dateKey].manualCount += 1;
+      } else if (task.generation_mode === 'ai') {
+        groupedByDate[dateKey].aiCount += 1;
+      }
+      
+      // 统计待发布数量
       const ready = task.articles.filter(a => a.status === 'ready').length;
-      // 已生成 = 状态为 ready 或 published 的文章数量（draft 不算真正生成）
-      const generatedCount = task.articles.filter(a => a.status === 'ready' || a.status === 'published').length;
-      const ungeneratedCount = Math.max(0, task.quantity - generatedCount);
-      groupedByDate[dateKey].ungeneratedCount += ungeneratedCount;
       groupedByDate[dateKey].readyCount += ready;
       
-      console.log('[逾期统计]', task.city, 'deadline:', task.deadline, 'quantity:', task.quantity, 'articles.length:', task.articles.length, 'ready:', ready, 'ungenerated:', ungeneratedCount, 'articles:', task.articles.map(a => a.status));
+      console.log('[逾期统计]', { 
+        city: task.city, 
+        deadline: task.deadline, 
+        mode: task.generation_mode,
+        articlesLength: task.articles.length,
+        articleStatuses: task.articles.map(a => a.status),
+      });
     });
 
     return groupedByDate;
@@ -2336,11 +2345,13 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                   <Text style={{ fontSize: 14, color: '#d4380d', fontWeight: 500 }}>逾期任务</Text>
                 </Space>
                 {Object.entries(overdueTasksInfo).map(([date, info]) => (
-                  <Space key={date} align="center">
+                  <Space key={date} align="center" wrap>
                     <Text style={{ fontSize: 14, color: '#d4380d' }}>
                       {date} 有{' '}
-                      {info.ungeneratedCount > 0 && <Text strong style={{ color: '#ff4d4f' }}>{info.ungeneratedCount} 个未生成</Text>}
-                      {info.ungeneratedCount > 0 && info.readyCount > 0 && '，'}
+                      {info.manualCount > 0 && <><Text strong style={{ color: '#ff4d4f' }}>{info.manualCount} 个</Text> 人工任务</>}
+                      {info.manualCount > 0 && info.aiCount > 0 && '，'}
+                      {info.aiCount > 0 && <><Text strong style={{ color: '#722ed1' }}>{info.aiCount} 个</Text> AI任务</>}
+                      {info.readyCount > 0 && '，'}
                       {info.readyCount > 0 && <Text strong style={{ color: '#fa8c16' }}>{info.readyCount} 个待发布</Text>}
                     </Text>
                     <Button
