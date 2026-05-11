@@ -1634,10 +1634,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         return true;
       }
 
-      // AI模式：与 aiTasks 过滤一致 — 排除已完成的 + 全部ready/published的
+      // AI模式：与 aiTasks 过滤一致 — 只排除全部文章已published的任务
       if (task.generation_mode === 'ai') {
-        if (task.ai_status === 'completed') return false;  // AI已生成完成的应去待发布列表
-        if (task.articles.length > 0 && task.articles.every(a => a.status === 'ready' || a.status === 'published')) return false;
+        if (task.articles.length > 0 && task.articles.every(a => a.status === 'published')) return false;
+        if (task.completedCount >= task.quantity) return false;
         return true;
       }
 
@@ -2358,26 +2358,27 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                   <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 16 }} />
                   <Text style={{ fontSize: 14, color: '#d4380d', fontWeight: 500 }}>逾期任务</Text>
                 </Space>
-                {Object.entries(overdueTasksInfo).map(([date, info]) => (
-                  <Space key={date} align="center" wrap>
-                    <Text style={{ fontSize: 14, color: '#d4380d' }}>
-                      {date} 有{' '}
-                      {info.manualCount > 0 && <><Text strong style={{ color: '#ff4d4f' }}>{info.manualCount} 个</Text> 人工任务</>}
-                      {info.manualCount > 0 && info.aiCount > 0 && '，'}
-                      {info.aiCount > 0 && <><Text strong style={{ color: '#722ed1' }}>{info.aiCount} 个</Text> AI任务</>}
-                      {info.readyCount > 0 && '，'}
-                      {info.readyCount > 0 && <Text strong style={{ color: '#fa8c16' }}>{info.readyCount} 个待发布</Text>}
-                    </Text>
-                    <Button
-                      type="primary"
-                      size="small"
-                      onClick={() => setSelectedDate(info.date)}
-                      style={{ borderRadius: 16 }}
-                    >
-                      回到 {date}
-                    </Button>
-                  </Space>
-                ))}
+                {Object.entries(overdueTasksInfo).map(([date, info]) => {
+                  const totalCount = info.manualCount + info.aiCount;
+                  return (
+                    <Space key={date} align="center" wrap>
+                      <Text style={{ fontSize: 14, color: '#d4380d' }}>
+                        {date} 有 <Text strong style={{ color: '#ff4d4f' }}>{totalCount} 个</Text> 任务未生成
+                        {info.manualCount > 0 && <>（<Text strong>{info.manualCount} 人工</Text></>}
+                        {info.aiCount > 0 && <><Text strong>，{info.aiCount} AI</Text>）</>}
+                        {info.readyCount > 0 && <>，<Text strong style={{ color: '#fa8c16' }}>{info.readyCount} 个待发布</Text></>}
+                      </Text>
+                      <Button
+                        type="primary"
+                        size="small"
+                        onClick={() => setSelectedDate(info.date)}
+                        style={{ borderRadius: 16 }}
+                      >
+                        回到 {date}
+                      </Button>
+                    </Space>
+                  );
+                })}
               </Space>
             </Card>
           )}
