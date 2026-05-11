@@ -1623,8 +1623,24 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
       const deadline = dayjs(task.deadline).startOf('day');
       // 截止日期早于今天
       if (!deadline.isBefore(today)) return false;
-      // 未完成的任务（有未发布的文章）
+      // 已全部发布的任务不算逾期
       if (task.articles.length > 0 && task.articles.every(a => a.status === 'published')) return false;
+
+      // 人工模式：与 manualTasks 过滤一致 — 排除已完成 + 有ready/published文章
+      if (task.generation_mode === 'manual') {
+        if (task.status === 'completed') return false;
+        if (task.articles.length > 0 && task.articles.some(a => a.status === 'ready' || a.status === 'published')) return false;
+        if (task.completedCount >= task.quantity) return false;
+        return true;
+      }
+
+      // AI模式：与 aiTasks 过滤一致 — 排除已完成的 + 全部ready/published的
+      if (task.generation_mode === 'ai') {
+        if (task.ai_status === 'completed') return false;  // AI已生成完成的应去待发布列表
+        if (task.articles.length > 0 && task.articles.every(a => a.status === 'ready' || a.status === 'published')) return false;
+        return true;
+      }
+
       return true;
     });
 
@@ -1652,6 +1668,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         city: task.city, 
         deadline: task.deadline, 
         mode: task.generation_mode,
+        aiStatus: task.ai_status,
         articlesLength: task.articles.length,
         articleStatuses: task.articles.map(a => a.status),
       });
@@ -1675,16 +1692,14 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   const [singleTaskModalVisible, setSingleTaskModalVisible] = useState(false);
   const [singleTask, setSingleTask] = useState<TaskWithArticles | null>(null);
 
-  // 分类任务（仅针对未生成页面）
+  // 分类任务（仅针对未生成页面）：显示所有尚未完全发布的任务
   const manualTasks = useMemo(() => {
     return tasks.filter(task => {
       // 只显示人工模式的任务
       if (task.generation_mode !== 'manual') return false;
-      // 排除已完成的任务
-      if (task.status === 'completed') return false;
-      // 排除已准备发布的任务（有 ready 或 published 状态的文章）
-      if (task.articles.length > 0 && task.articles.some(a => a.status === 'ready' || a.status === 'published')) return false;
-      // 防御性兜底：如果 completedCount 达到 quantity（全部已发布），也不显示
+      // 只排除所有文章都已发布的任务（这些去已完成列表）
+      if (task.articles.length > 0 && task.articles.every(a => a.status === 'published')) return false;
+      // 兜底：completedCount 达到 quantity 也排除
       if (task.completedCount >= task.quantity) return false;
       // 日期筛选
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
@@ -1698,11 +1713,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     return tasks.filter(task => {
       // 只显示AI模式的任务
       if (task.generation_mode !== 'ai') return false;
-      // 排除已完成的 AI 任务（ai_status=completed 说明 AI 已生成过内容）
-      // 这些任务应该出现在「待发布」或「已完成」列表中
-      if (task.ai_status === 'completed') return false;
-      // 兜底：即使 ai_status 不可靠，也排除所有文章都是 ready/published 的任务
-      if (task.articles.length > 0 && task.articles.every(a => a.status === 'ready' || a.status === 'published')) return false;
+      // 只排除所有文章都已发布的任务（这些去已完成列表）
+      if (task.articles.length > 0 && task.articles.every(a => a.status === 'published')) return false;
+      // 兜底：completedCount 达到 quantity 也排除
+      if (task.completedCount >= task.quantity) return false;
       // 日期筛选
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
       if (filterCity && task.city !== filterCity) return false;
