@@ -1306,7 +1306,10 @@ function AiGenerateSection({
                               type="primary"
                               size="small"
                               icon={<SyncOutlined />}
-                              onClick={() => onBatchRetry?.(selectedFailedKeys as string[])}
+                              onClick={() => {
+                                console.log('[批量重试按钮] 被点击! selectedFailedKeys=', selectedFailedKeys, 'onBatchRetry存在=', !!onBatchRetry);
+                                onBatchRetry?.(selectedFailedKeys as string[]);
+                              }}
                             >
                               批量重试 ({selectedFailedKeys.length})
                             </Button>
@@ -1979,17 +1982,30 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
 
   // 批量重试（直接重试，使用数据库中已保存的标题和额外要求）
   const handleBatchRetry = async (taskIds: string[]) => {
+    console.log('[handleBatchRetry] 被调用! taskIds=', taskIds, 'type=', typeof taskIds, 'tasks.length=', tasks.length);
+    
     const tasksToRetry = tasks.filter(t => taskIds.includes(t.id));
+    console.log('[handleBatchRetry] 过滤后 tasksToRetry=', tasksToRetry.map(t => ({ id: t.id, city: t.city })));
+    
+    if (tasksToRetry.length === 0) {
+      console.error('[handleBatchRetry] ⚠️ 没有匹配的任务! taskIds=', taskIds, '所有task id=', tasks.map(t => t.id));
+      message.warning('未找到匹配的任务，请刷新页面后重试');
+      return;
+    }
+
     message.loading({ content: `正在批量重试 ${tasksToRetry.length} 个任务...`, key: 'batch-retry' });
+    console.log('[handleBatchRetry] 开始处理', tasksToRetry.length, '个任务');
     
     for (const task of tasksToRetry) {
       try {
+        console.log(`[handleBatchRetry] 处理任务: ${task.city}, 设置为 generating`);
         await updateAiStatus(task.id, 'generating');
         
         // 从数据库读取之前保存的标题和额外要求
         const savedTitle = (task as any).user_title || `${task.city}相关文章`;
         const savedExtra = (task as any).extra_requirement || '';
         
+        console.log(`[handleBatchRetry] 调用 AI API: ${task.city}`);
         const response = await fetch('/api/generate-articles', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2004,10 +2020,14 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
           }),
         });
 
+        console.log(`[handleBatchRetry] AI API 响应状态:`, response.status);
         const result = await response.json();
+        console.log(`[handleBatchRetry] AI API 结果:`, result);
+
         if (result.success || (result.results && result.results[0]?.success)) {
           const content = result.results?.[0]?.content;
           if (content && task.articles.length > 0) {
+            console.log(`[handleBatchRetry] 保存内容到文章, articleId=`, task.articles[0].id);
             await supabase
               .from('articles')
               .update({
@@ -2018,16 +2038,19 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
               .eq('id', task.articles[0].id);
           }
           if (task.articles.length > 0) clearArticleDraft(task.articles[0].id);
+          console.log(`[handleBatchRetry] 标记为 completed: ${task.city}`);
           await updateAiStatus(task.id, 'completed');
         } else {
+          console.error(`[handleBatchRetry] AI 返回失败: ${task.city}`, result);
           await updateAiStatus(task.id, 'failed');
         }
       } catch (err) {
-        console.error(`批量重试失败 [${task.city}]:`, err);
+        console.error(`[handleBatchRetry] 异常 [${task.city}]:`, err);
         try { await updateAiStatus(task.id, 'failed'); } catch {}
       }
     }
     
+    console.log('[handleBatchRetry] 全部完成，刷新列表');
     refreshTasks();
     message.success({ content: `批量重试完成！共 ${tasksToRetry.length} 个任务`, key: 'batch-retry' });
   };
