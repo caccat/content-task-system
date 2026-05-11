@@ -1685,7 +1685,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     return tasks.filter(task => {
       // 只显示AI模式的任务
       if (task.generation_mode !== 'ai') return false;
-      // 排除所有文章都是 ready/published 的任务（这些应该去待发布列表）
+      // 排除已完成的 AI 任务（ai_status=completed 说明 AI 已生成过内容）
+      // 这些任务应该出现在「待发布」或「已完成」列表中
+      if (task.ai_status === 'completed') return false;
+      // 兜底：即使 ai_status 不可靠，也排除所有文章都是 ready/published 的任务
       if (task.articles.length > 0 && task.articles.every(a => a.status === 'ready' || a.status === 'published')) return false;
       // 日期筛选
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
@@ -1700,9 +1703,12 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     return tasks.filter(task => {
       // 至少有一篇文章状态为 ready 或 published
       const hasReadyArticle = task.articles.some(a => a.status === 'ready' || a.status === 'published');
-      if (!hasReadyArticle) return false;
+      // 兜底：AI 已完成但 articles 查询可能失败(400)，也放入待发布列表
+      const aiCompletedNoArticles = task.generation_mode === 'ai' && task.ai_status === 'completed'
+        && (!task.articles || task.articles.length === 0);
+      if (!hasReadyArticle && !aiCompletedNoArticles) return false;
       // 没有全部完成（否则应该在已完成里）
-      const allPublished = task.articles.every(a => a.status === 'published');
+      const allPublished = task.articles.length > 0 && task.articles.every(a => a.status === 'published');
       if (allPublished) return false;
       // 日期筛选
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
