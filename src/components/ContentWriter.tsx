@@ -1634,9 +1634,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
         return true;
       }
 
-      // AI模式：与 aiTasks 过滤一致 — AI已生成完成的应去待发布列表
+      // AI模式：与 aiTasks 过滤一致 — 只排除全部文章已published的任务
       if (task.generation_mode === 'ai') {
-        if (task.ai_status === 'completed') return false;
         if (task.articles.length > 0 && task.articles.every(a => a.status === 'published')) return false;
         if (task.completedCount >= task.quantity) return false;
         return true;
@@ -1714,8 +1713,6 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     return tasks.filter(task => {
       // 只显示AI模式的任务
       if (task.generation_mode !== 'ai') return false;
-      // AI已生成完成的应去「待发布」列表，不在「未生成」
-      if (task.ai_status === 'completed') return false;
       // 只排除所有文章都已发布的任务（这些去已完成列表）
       if (task.articles.length > 0 && task.articles.every(a => a.status === 'published')) return false;
       // 兜底：completedCount 达到 quantity 也排除
