@@ -1671,8 +1671,12 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
     return tasks.filter(task => {
       // 只显示人工模式的任务
       if (task.generation_mode !== 'manual') return false;
-      // 排除已准备发布的任务（有 ready 状态的文章）
-      if (task.articles.some(a => a.status === 'ready' || a.status === 'published')) return false;
+      // 排除已完成的任务
+      if (task.status === 'completed') return false;
+      // 排除已准备发布的任务（有 ready 或 published 状态的文章）
+      if (task.articles.length > 0 && task.articles.some(a => a.status === 'ready' || a.status === 'published')) return false;
+      // 防御性兜底：如果 completedCount 达到 quantity（全部已发布），也不显示
+      if (task.completedCount >= task.quantity) return false;
       // 日期筛选
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
       if (filterCity && task.city !== filterCity) return false;

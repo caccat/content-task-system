@@ -67,15 +67,30 @@ export function useTasks() {
 
       const taskIds = tasksData.map(t => t.id);
       
-      // 再获取文章数据（允许失败降级）
-      const articlesData = await fetchWithRetry<any[]>(async () =>
-        (await supabase
-          .from('articles')
-          .select('*')
-          .in('task_id', taskIds)
-        ) as unknown as { data: any[] | null; error: any },
-        2, 2000, true // 只重试2次，允许失败降级
-      );
+      // 分批查询文章数据（每批20个task_id，避免 .in() 参数过多导致 PostgREST 400 错误）
+      const BATCH_SIZE = 20;
+      let allArticles: any[] = [];
+      if (taskIds.length > 0) {
+        for (let i = 0; i < taskIds.length; i += BATCH_SIZE) {
+          const batch = taskIds.slice(i, i + BATCH_SIZE);
+          console.log(`[useTasks] 查询文章批次 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(taskIds.length / BATCH_SIZE)}, 包含 ${batch.length} 个任务`);
+          try {
+            const { data: batchArticles, error: batchError } = await supabase
+              .from('articles')
+              .select('*')
+              .in('task_id', batch);
+
+            if (batchError) {
+              console.error(`[useTasks] 文章查询批次失败 (批次${Math.floor(i / BATCH_SIZE) + 1}):`, batchError);
+            } else if (batchArticles) {
+              allArticles = allArticles.concat(batchArticles);
+            }
+          } catch (err) {
+            console.error(`[useTasks] 文章查询异常 (批次${Math.floor(i / BATCH_SIZE) + 1}):`, err);
+          }
+        }
+      }
+      const articlesData = allArticles;
 
       // 无论成功失败都继续显示任务
       if (!articlesData) {
