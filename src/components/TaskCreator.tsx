@@ -1261,6 +1261,38 @@ function CreatedTasksList() {
     setDetailModal({ visible: true, articles: filtered, title: `${record.city} - ${titles[type]}` });
   };
 
+  // 同步任务的 websites 字段：从该任务所有文章的 website 收集去重列表
+  const syncTaskWebsites = async (taskId: string) => {
+    try {
+      const { data: articles, error } = await supabase
+        .from('articles')
+        .select('website')
+        .eq('task_id', taskId);
+      
+      if (error) {
+        console.error('[syncTaskWebsites] 查询文章失败:', error);
+        return;
+      }
+
+      // 收集所有非空 website 并去重
+      const uniqueWebsites = [...new Set(
+        (articles || [])
+          .map((a: any) => a.website)
+          .filter((w: string | null) => w)
+      )];
+
+      await supabase
+        .from('tasks')
+        .update({ 
+          websites: uniqueWebsites,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', taskId);
+    } catch (err) {
+      console.error('[syncTaskWebsites] 同步失败:', err);
+    }
+  };
+
   // 处理文章删除
   const handleDeleteArticle = async (article: Article) => {
     try {
@@ -1298,18 +1330,17 @@ function CreatedTasksList() {
 
       if (articleError) throw articleError;
 
-      // 同时更新关联任务的任务级网站和写作建议
+      // 同步任务级网站字段（从所有文章收集去重列表）
       if (article.task_id) {
-        const { error: taskError } = await supabase
+        await syncTaskWebsites(article.task_id);
+        // 同时更新写作建议
+        await supabase
           .from('tasks')
           .update({
-            websites: values.website ? [values.website] : [],
             writing_suggestions: values.notes || null,
             updated_at: new Date().toISOString(),
           })
           .eq('id', article.task_id);
-        
-        if (taskError) throw taskError;
       }
 
       message.success('修改成功');
@@ -1399,6 +1430,8 @@ function CreatedTasksList() {
 
     try {
       let updatedCount = 0;
+      const affectedTaskIds = new Set<string>();
+
       for (const key of selectedRowKeys) {
         const record = groupedStats.find(g => `${g.city}-${g.promptType}` === key);
         if (record) {
@@ -1420,11 +1453,19 @@ function CreatedTasksList() {
                     updated_at: new Date().toISOString() 
                   })
                   .eq('id', article.id);
-                if (!error) updatedCount++;
+                if (!error) {
+                  updatedCount++;
+                  affectedTaskIds.add(task.id);
+                }
               }
             }
           }
         }
+      }
+
+      // 同步所有受影响任务的 websites 字段
+      for (const taskId of affectedTaskIds) {
+        await syncTaskWebsites(taskId);
       }
 
       message.success(`成功更新 ${updatedCount} 篇文章的发布网站`);
