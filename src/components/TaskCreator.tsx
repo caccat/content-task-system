@@ -1081,7 +1081,8 @@ function ArticleDetailModal({
   articles, 
   title,
   onDelete,
-  onEdit 
+  onEdit,
+  managedWebsites,
 }: { 
   visible: boolean; 
   onCancel: () => void; 
@@ -1089,10 +1090,28 @@ function ArticleDetailModal({
   title: string;
   onDelete: (article: Article) => void;
   onEdit: (article: Article) => void;
+  managedWebsites?: { id: string; name: string; platform: string }[];
 }) {
+  const getWebsiteLabel = (websiteId: string) => {
+    if (!managedWebsites) return websiteId || '未设置';
+    const site = managedWebsites.find(w => w.id === websiteId);
+    return site ? `${site.name} (${site.platform})` : (websiteId || '未设置');
+  };
+
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 80, render: (id: string) => id.slice(0, 8) + '...' },
     { title: '内容预览', dataIndex: 'content', key: 'content', render: (content: string) => content?.slice(0, 50) + '...' || '无内容' },
+    { 
+      title: '发布网站', 
+      dataIndex: 'website', 
+      key: 'website',
+      width: 160,
+      render: (website: string) => (
+        <Tag color={website ? 'blue' : 'default'}>
+          {getWebsiteLabel(website)}
+        </Tag>
+      ),
+    },
     { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (s: string) => s === 'published' ? '已发布' : s === 'ready' ? '待发布' : '草稿' },
     {
       title: '操作',
@@ -1124,6 +1143,13 @@ function CreatedTasksList() {
   const [detailModal, setDetailModal] = useState<{ visible: boolean; articles: Article[]; title: string }>({ visible: false, articles: [], title: '' });
   const [editModal, setEditModal] = useState<{ visible: boolean; record: any; tasks: any[] }>({ visible: false, record: null, tasks: [] });
   const [articleEditModal, setArticleEditModal] = useState<{ visible: boolean; article: Article | null }>({ visible: false, article: null });
+  // 状态筛选：all(全部) | draft(未生成) | ready(待发布) | published(已完成)
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  // 网站筛选
+  const [websiteFilter, setWebsiteFilter] = useState<string>('all');
+  // 批量修改网站弹窗
+  const [batchWebsiteModalVisible, setBatchWebsiteModalVisible] = useState(false);
+  const [batchNewWebsite, setBatchNewWebsite] = useState<string>('');
   const { websites: managedWebsites } = useWebsites();
   const promptTypes = usePromptTypes();
 
@@ -1149,7 +1175,7 @@ function CreatedTasksList() {
     });
   }, [tasks, selectedDate]);
 
-  // 按城市和提示词类型分组统计（基于文章真实状态）
+  // 按城市和提示词类型分组统计（基于文章真实状态），支持状态和网站筛选
   const groupedStats = useMemo(() => {
     const groups: Record<string, { 
       city: string; 
@@ -1175,11 +1201,16 @@ function CreatedTasksList() {
         };
       }
       
-      // 统计文章状态
+      // 统计文章状态（应用筛选）
       const taskArticles = task.articles || [];
-      groups[key].articles.push(...taskArticles);
-      
       taskArticles.forEach(article => {
+        const statusMatch = statusFilter === 'all' || article.status === statusFilter;
+        const websiteMatch = websiteFilter === 'all' || article.website === websiteFilter;
+        
+        if (!statusMatch || !websiteMatch) return;
+
+        groups[key].articles.push(article);
+        
         groups[key].total++;
         if (article.status === 'published') {
           groups[key].published++;
@@ -1192,7 +1223,7 @@ function CreatedTasksList() {
     });
     
     return Object.values(groups);
-  }, [filteredTasks]);
+  }, [filteredTasks, statusFilter, websiteFilter]);
 
   // 获取提示词类型名称
   const getPromptTypeName = (id: string) => {
@@ -1337,6 +1368,57 @@ function CreatedTasksList() {
     }
   };
 
+  // 处理批量修改网站
+  const handleBatchUpdateWebsite = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择要修改的任务');
+      return;
+    }
+    if (!batchNewWebsite) {
+      message.warning('请选择新网站');
+      return;
+    }
+
+    try {
+      let updatedCount = 0;
+      for (const key of selectedRowKeys) {
+        const record = groupedStats.find(g => `${g.city}-${g.promptType}` === key);
+        if (record) {
+          const tasksInGroup = filteredTasks.filter(
+            t => t.city === record.city && t.prompt_type === record.promptType
+          );
+          
+          for (const task of tasksInGroup) {
+            const taskArticles = task.articles || [];
+            for (const article of taskArticles) {
+              const statusMatch = statusFilter === 'all' || article.status === statusFilter;
+              const websiteMatch = websiteFilter === 'all' || article.website === websiteFilter;
+              
+              if (statusMatch && websiteMatch) {
+                const { error } = await supabase
+                  .from('articles')
+                  .update({ 
+                    website: batchNewWebsite, 
+                    updated_at: new Date().toISOString() 
+                  })
+                  .eq('id', article.id);
+                if (!error) updatedCount++;
+              }
+            }
+          }
+        }
+      }
+
+      message.success(`成功更新 ${updatedCount} 篇文章的发布网站`);
+      setBatchWebsiteModalVisible(false);
+      setBatchNewWebsite('');
+      setSelectedRowKeys([]);
+      refreshTasks();
+    } catch (err) {
+      message.error('批量更新失败');
+    }
+  };
+
   const columns = [
     {
       title: '城市',
@@ -1438,13 +1520,46 @@ function CreatedTasksList() {
 
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
-      <Space>
+      <Space wrap>
         <DatePicker
           value={selectedDate}
           onChange={(date) => date && setSelectedDate(date)}
           format="YYYY-MM-DD"
         />
+        <Select
+          value={statusFilter}
+          onChange={(v) => setStatusFilter(v)}
+          style={{ width: 120 }}
+          size="middle"
+        >
+          <Select.Option value="all">全部状态</Select.Option>
+          <Select.Option value="draft">未生成</Select.Option>
+          <Select.Option value="ready">待发布</Select.Option>
+          <Select.Option value="published">已完成</Select.Option>
+        </Select>
+        <Select
+          value={websiteFilter}
+          onChange={(v) => setWebsiteFilter(v)}
+          style={{ width: 200 }}
+          size="middle"
+          allowClear
+          placeholder="筛选网站"
+        >
+          <Select.Option value="all">全部网站</Select.Option>
+          {managedWebsites.map(w => (
+            <Select.Option key={w.id} value={w.id}>
+              {w.name} ({w.platform})
+            </Select.Option>
+          ))}
+        </Select>
         <Button icon={<FilterOutlined />} onClick={refreshTasks}>刷新</Button>
+        <Button 
+          type="primary" 
+          disabled={selectedRowKeys.length === 0}
+          onClick={() => setBatchWebsiteModalVisible(true)}
+        >
+          批量修改网站
+        </Button>
         <Popconfirm
           title="确定批量删除?"
           description={`删除选中的 ${selectedRowKeys.length} 项任务`}
@@ -1485,6 +1600,7 @@ function CreatedTasksList() {
         title={detailModal.title}
         onDelete={handleDeleteArticle}
         onEdit={handleEditArticle}
+        managedWebsites={managedWebsites}
       />
 
       {/* 编辑任务弹窗 */}
@@ -1560,6 +1676,41 @@ function CreatedTasksList() {
         onSave={handleSaveArticleEdit}
         managedWebsites={managedWebsites}
       />
+
+      {/* 批量修改网站弹窗 */}
+      <Modal
+        title="批量修改发布网站"
+        open={batchWebsiteModalVisible}
+        onCancel={() => { setBatchWebsiteModalVisible(false); setBatchNewWebsite(''); }}
+        onOk={handleBatchUpdateWebsite}
+        confirmLoading={loading}
+        width={450}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Text>
+            已选择 {selectedRowKeys.length} 个分组，
+            当前筛选：{statusFilter === 'all' ? '全部状态' : statusFilter === 'draft' ? '未生成' : statusFilter === 'ready' ? '待发布' : '已完成'}
+            / {websiteFilter === 'all' ? '全部网站' : managedWebsites.find(w => w.id === websiteFilter)?.name || websiteFilter}
+          </Text>
+          <Form layout="vertical">
+            <Form.Item label="选择新网站" required>
+              <Select
+                value={batchNewWebsite || undefined}
+                onChange={(v) => setBatchNewWebsite(v)}
+                placeholder="请选择新的发布网站"
+                style={{ width: '100%' }}
+                options={managedWebsites.map(w => ({
+                  label: `${w.name} (${w.platform})`,
+                  value: w.id,
+                }))}
+              />
+            </Form.Item>
+          </Form>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            提示：将更新所选分组中符合当前筛选条件的所有文章的发布网站
+          </Text>
+        </Space>
+      </Modal>
     </Space>
   );
 }
