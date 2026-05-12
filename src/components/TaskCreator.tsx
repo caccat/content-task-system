@@ -1222,8 +1222,26 @@ function CreatedTasksList() {
       });
     });
     
-    return Object.values(groups);
+    return Object.values(groups).filter(g => g.total > 0);
   }, [filteredTasks, statusFilter, websiteFilter]);
+
+  // 从当前日期的任务文章中动态提取已有的网站选项
+  const availableWebsiteOptions = useMemo(() => {
+    const websiteIds = new Set<string>();
+    filteredTasks.forEach(task => {
+      (task.articles || []).forEach(article => {
+        if (article.website) websiteIds.add(article.website);
+      });
+    });
+    // 按 managedWebsites 排序显示名称
+    return Array.from(websiteIds).map(id => {
+      const site = managedWebsites.find(w => w.id === id);
+      return {
+        value: id,
+        label: site ? `${site.name} (${site.platform})` : id,
+      };
+    }).sort((a, b) => a.label.localeCompare(b.label, 'zh'));
+  }, [filteredTasks, managedWebsites]);
 
   // 获取提示词类型名称
   const getPromptTypeName = (id: string) => {
@@ -1546,9 +1564,9 @@ function CreatedTasksList() {
           placeholder="筛选网站"
         >
           <Select.Option value="all">全部网站</Select.Option>
-          {managedWebsites.map(w => (
-            <Select.Option key={w.id} value={w.id}>
-              {w.name} ({w.platform})
+          {availableWebsiteOptions.map(opt => (
+            <Select.Option key={opt.value} value={opt.value}>
+              {opt.label}
             </Select.Option>
           ))}
         </Select>
