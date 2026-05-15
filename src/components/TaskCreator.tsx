@@ -1147,6 +1147,8 @@ function CreatedTasksList() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   // 网站筛选
   const [websiteFilter, setWebsiteFilter] = useState<string>('all');
+  // 提示词类型筛选
+  const [promptTypeFilter, setPromptTypeFilter] = useState<string>('all');
   // 批量修改网站弹窗
   const [batchWebsiteModalVisible, setBatchWebsiteModalVisible] = useState(false);
   const [batchNewWebsite, setBatchNewWebsite] = useState<string>('');
@@ -1191,6 +1193,10 @@ function CreatedTasksList() {
     }> = {};
     
     filteredTasks.forEach(task => {
+      // 提示词类型是任务级别筛选
+      const promptTypeMatch = promptTypeFilter === 'all' || task.prompt_type === promptTypeFilter;
+      if (!promptTypeMatch) return;
+
       const key = `${task.city}-${task.prompt_type}`;
       if (!groups[key]) {
         groups[key] = {
@@ -1226,7 +1232,7 @@ function CreatedTasksList() {
     });
     
     return Object.values(groups).filter(g => g.total > 0);
-  }, [filteredTasks, statusFilter, websiteFilter]);
+  }, [filteredTasks, statusFilter, websiteFilter, promptTypeFilter]);
 
   // 从当前日期的任务文章中动态提取已有的网站选项
   const availableWebsiteOptions = useMemo(() => {
@@ -1245,6 +1251,18 @@ function CreatedTasksList() {
       };
     }).sort((a, b) => a.label.localeCompare(b.label, 'zh'));
   }, [filteredTasks, managedWebsites]);
+
+  // 从当前日期的任务中动态提取已有的提示词类型选项
+  const availablePromptTypeOptions = useMemo(() => {
+    const typeIds = new Set<string>();
+    filteredTasks.forEach(task => {
+      if (task.prompt_type) typeIds.add(task.prompt_type);
+    });
+    return Array.from(typeIds).map(id => {
+      const pt = promptTypes.find(t => t.id === id);
+      return { value: id, label: pt?.type || id };
+    }).sort((a, b) => a.label.localeCompare(b.label, 'zh'));
+  }, [filteredTasks, promptTypes]);
 
   // 获取提示词类型名称
   const getPromptTypeName = (id: string) => {
@@ -1655,6 +1673,21 @@ function CreatedTasksList() {
         >
           <Select.Option value="all">全部网站</Select.Option>
           {availableWebsiteOptions.map(opt => (
+            <Select.Option key={opt.value} value={opt.value}>
+              {opt.label}
+            </Select.Option>
+          ))}
+        </Select>
+        <Select
+          value={promptTypeFilter}
+          onChange={(v) => setPromptTypeFilter(v)}
+          style={{ width: 200 }}
+          size="middle"
+          allowClear
+          placeholder="筛选提示词类型"
+        >
+          <Select.Option value="all">全部提示词类型</Select.Option>
+          {availablePromptTypeOptions.map(opt => (
             <Select.Option key={opt.value} value={opt.value}>
               {opt.label}
             </Select.Option>
