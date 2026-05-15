@@ -1516,11 +1516,23 @@ function CreatedTasksList() {
       for (const key of selectedRowKeys) {
         const record = groupedStats.find(g => `${g.city}-${g.promptType}` === key);
         if (record) {
-          const tasksInGroup = filteredTasks.filter(
+          // 取该 city+promptType 组合下的所有原始任务
+          const allTasksInGroup = filteredTasks.filter(
             t => t.city === record.city && t.prompt_type === record.promptType
           );
           
-          for (const task of tasksInGroup) {
+          for (const task of allTasksInGroup) {
+            // 关键修复：检查该任务是否有文章符合当前的状态+网站筛选条件
+            // 如果没有符合条件的文章，说明这个任务在当前视图下不可见，不应被更新
+            const taskArticles = task.articles || [];
+            const hasMatchingArticle = taskArticles.some(article => {
+              const statusMatch = statusFilter === 'all' || article.status === statusFilter;
+              const websiteMatch = websiteFilter === 'all' || article.website === websiteFilter;
+              return statusMatch && websiteMatch;
+            });
+
+            if (!hasMatchingArticle) continue;
+
             const { error } = await supabase
               .from('tasks')
               .update({ 
