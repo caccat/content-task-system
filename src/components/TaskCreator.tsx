@@ -1150,6 +1150,9 @@ function CreatedTasksList() {
   // 批量修改网站弹窗
   const [batchWebsiteModalVisible, setBatchWebsiteModalVisible] = useState(false);
   const [batchNewWebsite, setBatchNewWebsite] = useState<string>('');
+  // 批量修改提示词类型弹窗
+  const [batchPromptTypeModalVisible, setBatchPromptTypeModalVisible] = useState(false);
+  const [batchNewPromptType, setBatchNewPromptType] = useState<string>('');
   const { websites: managedWebsites } = useWebsites();
   const promptTypes = usePromptTypes();
 
@@ -1478,6 +1481,52 @@ function CreatedTasksList() {
     }
   };
 
+  // 处理批量修改提示词类型
+  const handleBatchUpdatePromptType = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择要修改的任务');
+      return;
+    }
+    if (!batchNewPromptType) {
+      message.warning('请选择新提示词类型');
+      return;
+    }
+
+    try {
+      let updatedCount = 0;
+
+      for (const key of selectedRowKeys) {
+        const record = groupedStats.find(g => `${g.city}-${g.promptType}` === key);
+        if (record) {
+          const tasksInGroup = filteredTasks.filter(
+            t => t.city === record.city && t.prompt_type === record.promptType
+          );
+          
+          for (const task of tasksInGroup) {
+            const { error } = await supabase
+              .from('tasks')
+              .update({ 
+                prompt_type: batchNewPromptType, 
+                updated_at: new Date().toISOString(), 
+              })
+              .eq('id', task.id);
+            
+            if (!error) updatedCount++;
+          }
+        }
+      }
+
+      message.success(`成功更新 ${updatedCount} 个任务的提示词类型`);
+      setBatchPromptTypeModalVisible(false);
+      setBatchNewPromptType('');
+      setSelectedRowKeys([]);
+      refreshTasks();
+    } catch (err) {
+      message.error('批量更新失败');
+    }
+  };
+
+  // CreatedTasksList 表格列定义
   const columns = [
     {
       title: '城市',
@@ -1618,6 +1667,13 @@ function CreatedTasksList() {
           onClick={() => setBatchWebsiteModalVisible(true)}
         >
           批量修改网站
+        </Button>
+        <Button 
+          type="primary"
+          disabled={selectedRowKeys.length === 0}
+          onClick={() => setBatchPromptTypeModalVisible(true)}
+        >
+          批量修改提示词类型
         </Button>
         <Popconfirm
           title="确定批量删除?"
@@ -1767,6 +1823,39 @@ function CreatedTasksList() {
           </Form>
           <Text type="secondary" style={{ fontSize: 12 }}>
             提示：将更新所选分组中符合当前筛选条件的所有文章的发布网站
+          </Text>
+        </Space>
+      </Modal>
+
+      {/* 批量修改提示词类型弹窗 */}
+      <Modal
+        title="批量修改提示词类型"
+        open={batchPromptTypeModalVisible}
+        onCancel={() => { setBatchPromptTypeModalVisible(false); setBatchNewPromptType(''); }}
+        onOk={handleBatchUpdatePromptType}
+        confirmLoading={loading}
+        width={450}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Text>
+            已选择 {selectedRowKeys.length} 个分组
+          </Text>
+          <Form layout="vertical">
+            <Form.Item label="选择新提示词类型" required>
+              <Select
+                value={batchNewPromptType || undefined}
+                onChange={(v) => setBatchNewPromptType(v)}
+                placeholder="请选择新的提示词类型"
+                style={{ width: '100%' }}
+                options={promptTypes.map(p => ({
+                  label: p.type,
+                  value: p.id,
+                }))}
+              />
+            </Form.Item>
+          </Form>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            提示：将更新所选分组中所有任务的提示词类型
           </Text>
         </Space>
       </Modal>
