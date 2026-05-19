@@ -158,16 +158,10 @@ function App() {
 
         todayTasks.forEach(task => {
           const taskArticles = (articlesData as Article[]).filter(a => a.task_id === task.id);
-          const readyCount = taskArticles.filter(a => a.status === 'ready').length;
-          const publishedCount = taskArticles.filter(a => a.status === 'published').length;
-
-          if (publishedCount === task.quantity) {
-            stats.completed++;
-          } else if (readyCount > 0 || publishedCount > 0) {
-            stats.ready++;
-          } else {
-            stats.draft++;
-          }
+          // 按文章数统计：draft / ready / published 各多少篇
+          stats.draft += taskArticles.filter(a => a.status === 'draft').length;
+          stats.ready += taskArticles.filter(a => a.status === 'ready').length;
+          stats.completed += taskArticles.filter(a => a.status === 'published').length;
         });
 
         setTaskStats(stats);
@@ -229,9 +223,7 @@ function App() {
           label: (
             <span>
               待发布
-              {taskStats.ready > 0 && (
-                <Badge count={taskStats.ready} style={{ marginLeft: 8, backgroundColor: '#1890ff' }} />
-              )}
+              <Badge count={taskStats.ready} style={{ marginLeft: 8, backgroundColor: '#1890ff' }} />
             </span>
           ),
         },
@@ -241,9 +233,7 @@ function App() {
           label: (
             <span>
               已完成
-              {taskStats.completed > 0 && (
-                <Badge count={taskStats.completed} style={{ marginLeft: 8, backgroundColor: '#52c41a' }} />
-              )}
+              <Badge count={taskStats.completed} style={{ marginLeft: 8, backgroundColor: '#52c41a' }} />
             </span>
           ),
         },
