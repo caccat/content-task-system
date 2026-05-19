@@ -154,16 +154,31 @@ function App() {
           task => dayjs(task.deadline).format('YYYY-MM-DD') === today
         );
 
+        // DEBUG: 打印原始数据
+        console.log('[fetchTaskStats] 总任务数:', tasksData.length, '总文章数:', articlesData.length);
+        console.log('[fetchTaskStats] 今天任务数:', todayTasks.length, '日期:', today);
+
         const stats = { draft: 0, ready: 0, completed: 0 };
 
         todayTasks.forEach(task => {
           const taskArticles = (articlesData as Article[]).filter(a => a.task_id === task.id);
           // 按文章数统计：draft / ready / published 各多少篇
-          stats.draft += taskArticles.filter(a => a.status === 'draft').length;
-          stats.ready += taskArticles.filter(a => a.status === 'ready').length;
-          stats.completed += taskArticles.filter(a => a.status === 'published').length;
+          const draftCount = taskArticles.filter(a => a.status === 'draft').length;
+          const readyCount = taskArticles.filter(a => a.status === 'ready').length;
+          const publishedCount = taskArticles.filter(a => a.status === 'published').length;
+          
+          stats.draft += draftCount;
+          stats.ready += readyCount;
+          stats.completed += publishedCount;
+          
+          // DEBUG: 每个任务的统计
+          if (readyCount > 0 || publishedCount > 0 || draftCount > 0) {
+            console.log(`[fetchTaskStats] ${task.city} | articles=${taskArticles.length} | draft=${draftCount} ready=${readyCount} pub=${publishedCount}`);
+          }
         });
 
+        // DEBUG: 最终结果
+        console.log('[fetchTaskStats] 最终统计 →', JSON.stringify(stats));
         setTaskStats(stats);
       } catch (err) {
         console.error('Error fetching task stats:', err);
