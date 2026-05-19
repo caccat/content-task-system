@@ -144,41 +144,37 @@ function App() {
   useEffect(() => {
     const fetchTaskStats = async () => {
       try {
-        const { data: tasksData } = await supabase.from('tasks').select('*');
-        const { data: articlesData } = await supabase.from('articles').select('*');
-
-        if (!tasksData || !articlesData) return;
-
         const today = dayjs().format('YYYY-MM-DD');
-        const todayTasks = (tasksData as Task[]).filter(
-          task => dayjs(task.deadline).format('YYYY-MM-DD') === today
-        );
 
-        // DEBUG: 打印原始数据
-        console.log('[fetchTaskStats] 总任务数:', tasksData.length, '总文章数:', articlesData.length);
-        console.log('[fetchTaskStats] 今天任务数:', todayTasks.length, '日期:', today);
+        // 只查询今天截止的任务，避免全表拉取触发 Supabase 1000 行限制
+        const { data: todayTasksData } = await supabase
+          .from('tasks')
+          .select('id')
+          .eq('deadline', today);
+
+        if (!todayTasksData || todayTasksData.length === 0) {
+          setTaskStats({ draft: 0, ready: 0, completed: 0 });
+          return;
+        }
+
+        const taskIds = todayTasksData.map(t => t.id);
+
+        // 只查今天任务关联的文章
+        const { data: articlesData } = await supabase
+          .from('articles')
+          .select('status, task_id')
+          .in('task_id', taskIds);
+
+        if (!articlesData) return;
 
         const stats = { draft: 0, ready: 0, completed: 0 };
 
-        todayTasks.forEach(task => {
-          const taskArticles = (articlesData as Article[]).filter(a => a.task_id === task.id);
-          // 按文章数统计：draft / ready / published 各多少篇
-          const draftCount = taskArticles.filter(a => a.status === 'draft').length;
-          const readyCount = taskArticles.filter(a => a.status === 'ready').length;
-          const publishedCount = taskArticles.filter(a => a.status === 'published').length;
-          
-          stats.draft += draftCount;
-          stats.ready += readyCount;
-          stats.completed += publishedCount;
-          
-          // DEBUG: 每个任务的统计
-          if (readyCount > 0 || publishedCount > 0 || draftCount > 0) {
-            console.log(`[fetchTaskStats] ${task.city} | articles=${taskArticles.length} | draft=${draftCount} ready=${readyCount} pub=${publishedCount}`);
-          }
+        articlesData.forEach(article => {
+          if (article.status === 'draft') stats.draft++;
+          else if (article.status === 'ready') stats.ready++;
+          else if (article.status === 'published') stats.completed++;
         });
 
-        // DEBUG: 最终结果
-        console.log('[fetchTaskStats] 最终统计 →', JSON.stringify(stats));
         setTaskStats(stats);
       } catch (err) {
         console.error('Error fetching task stats:', err);
