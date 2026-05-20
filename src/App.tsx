@@ -443,7 +443,7 @@ function App() {
         <div style={{ padding: '8px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f5f5f5' }}>
           <span style={{ fontSize: 12, color: '#666' }}>
             统计日期: {statsDate.format('YYYY-MM-DD')}
-            {isStatsLocked && <Tag color="blue" size="small" style={{ marginLeft: 6 }}>已锁定</Tag>}
+            {isStatsLocked && <Tag color="blue" style={{ marginLeft: 6, fontSize: 11 }}>已锁定</Tag>}
           </span>
           <Button
             type="text"
