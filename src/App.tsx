@@ -15,6 +15,8 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   BookOutlined,
+  LockOutlined,
+  UnlockOutlined,
 } from '@ant-design/icons';
 import TaskCreator from './components/TaskCreator';
 import ContentWriter from './components/ContentWriter';
@@ -139,95 +141,46 @@ function App() {
 
   // 任务统计数据（用于菜单徽章）
   const [taskStats, setTaskStats] = useState({ draft: 0, ready: 0, completed: 0 });
+  // 侧边栏统计使用的日期
+  const [statsDate, setStatsDate] = useState<dayjs.Dayjs>(dayjs());
+  // 是否锁定统计日期（锁定后不跟随页面选择器变化）
+  const [isStatsLocked, setIsStatsLocked] = useState(false);
 
-  // 获取任务统计数据（不使用 useTasks hook 避免订阅冲突）
+  // 获取任务统计数据（按文章数统计）
   useEffect(() => {
     const fetchTaskStats = async () => {
       try {
-        const today = dayjs().format('YYYY-MM-DD');
-        console.log('[fetchTaskStats] today=', today);
+        // 使用 gte/lte 范围查询匹配 timestamp 类型的 deadline
+        const startOfDay = statsDate.startOf('day').toISOString();
+        const endOfDay = statsDate.endOf('day').toISOString();
 
-        // 只查询今天截止的任务，避免全表拉取触发 Supabase 1000 行限制
-        const { data: todayTasksData, error: tasksError } = await supabase
+        const { data: dateTasks } = await supabase
           .from('tasks')
-          .select('id, deadline')
-          .eq('deadline', today);
+          .select('id')
+          .gte('deadline', startOfDay)
+          .lte('deadline', endOfDay);
 
-        console.log('[fetchTaskStats] tasks query error:', tasksError);
-        console.log('[fetchTaskStats] todayTasksData length:', todayTasksData?.length);
-        if (todayTasksData && todayTasksData.length > 0) {
-          console.log('[fetchTaskStats] 第一个任务 deadline 样例:', todayTasksData[0].deadline);
-        }
-
-        if (!todayTasksData || todayTasksData.length === 0) {
-          console.log('[fetchTaskStats] 今天任务为空，尝试用 gte/lte 范围查询...');
-          
-          // fallback: 用日期范围查询
-          const startOfDay = dayjs().startOf('day').toISOString();
-          const endOfDay = dayjs().endOf('day').toISOString();
-          const { data: fallbackTasks, error: fallbackError } = await supabase
-            .from('tasks')
-            .select('id, deadline')
-            .gte('deadline', startOfDay)
-            .lte('deadline', endOfDay);
-            
-          console.log('[fetchTaskStats] fallback query error:', fallbackError);
-          console.log('[fetchTaskStats] fallbackTasks length:', fallbackTasks?.length);
-          if (fallbackTasks && fallbackTasks.length > 0) {
-            console.log('[fetchTaskStats] fallback 第一个任务 deadline 样例:', fallbackTasks[0].deadline);
-            console.log('[fetchTaskStats] startOfDay:', startOfDay, 'endOfDay:', endOfDay);
-          }
-
-          if (!fallbackTasks || fallbackTasks.length === 0) {
-            setTaskStats({ draft: 0, ready: 0, completed: 0 });
-            return;
-          }
-
-          const taskIds = fallbackTasks.map(t => t.id);
-
-          const { data: articlesData } = await supabase
-            .from('articles')
-            .select('status, task_id')
-            .in('task_id', taskIds);
-
-          console.log('[fetchTaskStats] articlesData length:', articlesData?.length);
-
-          if (!articlesData) return;
-
-          const stats = { draft: 0, ready: 0, completed: 0 };
-          articlesData.forEach(article => {
-            if (article.status === 'draft') stats.draft++;
-            else if (article.status === 'ready') stats.ready++;
-            else if (article.status === 'published') stats.completed++;
-          });
-
-          console.log('[fetchTaskStats] 最终统计 →', JSON.stringify(stats));
-          setTaskStats(stats);
+        if (!dateTasks || dateTasks.length === 0) {
+          setTaskStats({ draft: 0, ready: 0, completed: 0 });
           return;
         }
 
-        const taskIds = todayTasksData.map(t => t.id);
+        const taskIds = dateTasks.map(t => t.id);
 
-        // 只查今天任务关联的文章
-        const { data: articlesData, error: articlesError } = await supabase
+        const { data: articlesData } = await supabase
           .from('articles')
           .select('status, task_id')
           .in('task_id', taskIds);
 
-        console.log('[fetchTaskStats] articles query error:', articlesError);
-        console.log('[fetchTaskStats] articlesData length:', articlesData?.length);
-
         if (!articlesData) return;
 
         const stats = { draft: 0, ready: 0, completed: 0 };
-
         articlesData.forEach(article => {
           if (article.status === 'draft') stats.draft++;
           else if (article.status === 'ready') stats.ready++;
           else if (article.status === 'published') stats.completed++;
         });
 
-        console.log('[fetchTaskStats] 最终统计 →', JSON.stringify(stats));
         setTaskStats(stats);
       } catch (err) {
         console.error('Error fetching task stats:', err);
@@ -235,11 +188,16 @@ function App() {
     };
 
     fetchTaskStats();
-
-    // 设置定时刷新（每 120 秒，减少数据库压力）
     const interval = setInterval(fetchTaskStats, 120000);
     return () => clearInterval(interval);
-  }, []);
+  }, [statsDate]);
+
+  // 子页面通知 App 当前选中的日期（未锁定时自动跟随）
+  const handleChildDateChange = (date: dayjs.Dayjs) => {
+    if (!isStatsLocked) {
+      setStatsDate(date);
+    }
+  };
 
   const menuItems = [
     {
@@ -275,8 +233,7 @@ function App() {
           label: (
             <span>
               未生成
-              {taskStats.draft > 0 && (
-                <Badge count={taskStats.draft} style={{ marginLeft: 8, backgroundColor: '#ff4d4f' }} />
+              <Badge count={taskStats.draft} style={{ marginLeft: 8, backgroundColor: '#ff4d4f' }} />
               )}
             </span>
           ),
@@ -323,9 +280,7 @@ function App() {
               label: (
                 <span>
                   待发布
-                  {taskStats.ready > 0 && (
-                    <Badge count={taskStats.ready} style={{ marginLeft: 8, backgroundColor: '#1890ff' }} />
-                  )}
+                  <Badge count={taskStats.ready} style={{ marginLeft: 8, backgroundColor: '#1890ff' }} />
                 </span>
               ),
             },
@@ -334,9 +289,7 @@ function App() {
               label: (
                 <span>
                   已完成
-                  {taskStats.completed > 0 && (
-                    <Badge count={taskStats.completed} style={{ marginLeft: 8, backgroundColor: '#52c41a' }} />
-                  )}
+                  <Badge count={taskStats.completed} style={{ marginLeft: 8, backgroundColor: '#52c41a' }} />
                 </span>
               ),
             },
@@ -371,11 +324,11 @@ function App() {
       case 'writer':
         switch (writerSubPage) {
           case 'draft':
-            return <ContentWriter defaultStatus="draft" onOpenSettings={() => setCurrentRole('settings')} />;
+            return <ContentWriter defaultStatus="draft" onOpenSettings={() => setCurrentRole('settings')} onDateChange={handleChildDateChange} />;
           case 'ready':
-            return <ContentWriter defaultStatus="ready" onOpenSettings={() => setCurrentRole('settings')} />;
+            return <ContentWriter defaultStatus="ready" onOpenSettings={() => setCurrentRole('settings')} onDateChange={handleChildDateChange} />;
           case 'completed':
-            return <ContentWriter defaultStatus="completed" onOpenSettings={() => setCurrentRole('settings')} />;
+            return <ContentWriter defaultStatus="completed" onOpenSettings={() => setCurrentRole('settings')} onDateChange={handleChildDateChange} />;
           case 'prompts':
             return <PromptManager />;
           default:
@@ -384,13 +337,13 @@ function App() {
       case 'publisher':
         switch (publisherSubPage) {
           case 'tasks':
-            return <TaskPublisher />;
+            return <TaskPublisher onDateChange={handleChildDateChange} />;
           case 'ready':
-            return <TaskPublisher defaultStatus="ready" />;
+            return <TaskPublisher defaultStatus="ready" onDateChange={handleChildDateChange} />;
           case 'completed':
-            return <TaskPublisher defaultStatus="completed" />;
+            return <TaskPublisher defaultStatus="completed" onDateChange={handleChildDateChange} />;
           default:
-            return <TaskPublisher />;
+            return <TaskPublisher onDateChange={handleChildDateChange} />;
         }
       case 'settings':
         return <Settings />;
@@ -486,6 +439,20 @@ function App() {
               <div style={{ color: '#666', fontSize: 12, letterSpacing: 1 }}>Powered by rrrr</div>
             </div>
           </Space>
+        </div>
+        {/* 侧边栏统计日期锁定 */}
+        <div style={{ padding: '8px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f5f5f5' }}>
+          <span style={{ fontSize: 12, color: '#666' }}>
+            统计日期: {statsDate.format('YYYY-MM-DD')}
+            {isStatsLocked && <Tag color="blue" size="small" style={{ marginLeft: 6 }}>已锁定</Tag>}
+          </span>
+          <Button
+            type="text"
+            size="small"
+            icon={isStatsLocked ? <LockOutlined /> : <UnlockOutlined />}
+            onClick={() => setIsStatsLocked(!isStatsLocked)}
+            title={isStatsLocked ? '解锁日期（跟随页面选择器）' : '锁定日期（不跟随选择器变化）'}
+          />
         </div>
         <Menu
           mode="inline"

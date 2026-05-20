@@ -168,9 +168,10 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
 
 interface TaskPublisherProps {
   defaultStatus?: string;
+  onDateChange?: (date: dayjs.Dayjs) => void;
 }
 
-export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
+export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPublisherProps) {
   // 如果是已完成状态，使用新的表格组件
   if (defaultStatus === 'completed') {
     return <CompletedTasksTable defaultStatus={defaultStatus} />;
@@ -185,6 +186,12 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
   const [filterWebsite, setFilterWebsite] = useState<string | undefined>(undefined);
   const [filterStatus, setFilterStatus] = useState<string | undefined>(defaultStatus);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
+
+  // 日期变化时通知父组件
+  const handleDateChange = (date: dayjs.Dayjs) => {
+    setSelectedDate(date);
+    onDateChange?.(date);
+  };
 
   // 计算逾期任务（截止日期早于今天且有未完成任务）
   const overdueTasksInfo = useMemo(() => {
@@ -353,7 +360,7 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
             <CalendarOutlined style={{ color: '#1890ff', fontSize: 18 }} />
             <DatePicker
               value={selectedDate}
-              onChange={(date) => date && setSelectedDate(date)}
+              onChange={(date) => date && handleDateChange(date)}
               format="YYYY-MM-DD"
               style={{ width: 140 }}
             />
@@ -395,7 +402,7 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
                 <Button
                   type="primary"
                   size="small"
-                  onClick={() => setSelectedDate(info.date)}
+                  onClick={() => handleDateChange(info.date)}
                   style={{ borderRadius: 16 }}
                 >
                   回到 {date}
@@ -423,7 +430,7 @@ export default function TaskPublisher({ defaultStatus }: TaskPublisherProps) {
               <CalendarOutlined style={{ color: '#667eea', fontSize: 18 }} />
               <DatePicker
                 value={selectedDate}
-                onChange={(date) => date && setSelectedDate(date)}
+                onChange={(date) => date && handleDateChange(date)}
                 format="YYYY-MM-DD"
                 style={{ 
                   width: 140,

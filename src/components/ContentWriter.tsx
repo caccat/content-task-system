@@ -1602,9 +1602,10 @@ function CompletedSection({
 interface ContentWriterProps {
   defaultStatus?: string;
   onOpenSettings?: () => void;
+  onDateChange?: (date: dayjs.Dayjs) => void;
 }
 
-export default function ContentWriter({ defaultStatus, onOpenSettings }: ContentWriterProps) {
+export default function ContentWriter({ defaultStatus, onOpenSettings, onDateChange }: ContentWriterProps) {
   const { tasks, loading, error, deleteTask, refreshTasks, switchToAiMode, switchToManualMode, updateAiStatus, updateTaskFields } = useTasks();
   const [selectedTask, setSelectedTask] = useState<TaskWithArticles | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -1618,6 +1619,12 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
   const [filterCity, setFilterCity] = useState<string | undefined>(undefined);
   const [filterPromptType, setFilterPromptType] = useState<string | undefined>(undefined);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
+
+  // 日期变化时通知父组件（用于侧边栏统计联动）
+  const handleDateChange = (date: dayjs.Dayjs) => {
+    setSelectedDate(date);
+    onDateChange?.(date);
+  };
 
   // 计算逾期任务（截止日期早于今天且在「未生成」/「待发布」列表中的任务）
   // 过滤逻辑与 manualTasks / aiTasks + readyTasks 完全一致（仅额外加 deadline.isBefore 条件）
@@ -2338,8 +2345,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                 <CalendarOutlined style={{ color: '#1890ff', fontSize: 18 }} />
                 <DatePicker
                   value={selectedDate}
-                  onChange={(date) => date && setSelectedDate(date)}
-                  format="YYYY-MM-DD"
+                  onChange={(date) => date && handleDateChange(date)}
                   style={{ width: 140 }}
                 />
                 <Text style={{ fontSize: 16 }}>
@@ -2378,7 +2384,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                       <Button
                         type="primary"
                         size="small"
-                        onClick={() => setSelectedDate(info.date)}
+                        onClick={() => handleDateChange(info.date)}
                         style={{ borderRadius: 16 }}
                       >
                         回到 {date}
@@ -2510,7 +2516,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                 <CalendarOutlined style={{ color: '#1890ff', fontSize: 18 }} />
                 <DatePicker
                   value={selectedDate}
-                  onChange={(date) => date && setSelectedDate(date)}
+                  onChange={(date) => date && handleDateChange(date)}
                   format="YYYY-MM-DD"
                   style={{ width: 140 }}
                 />
@@ -2548,7 +2554,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings }: Content
                 <CalendarOutlined style={{ color: '#1890ff', fontSize: 18 }} />
                 <DatePicker
                   value={selectedDate}
-                  onChange={(date) => date && setSelectedDate(date)}
+                  onChange={(date) => date && handleDateChange(date)}
                   format="YYYY-MM-DD"
                   style={{ width: 140 }}
                 />
