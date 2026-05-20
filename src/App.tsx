@@ -234,7 +234,6 @@ function App() {
             <span>
               未生成
               <Badge count={taskStats.draft} style={{ marginLeft: 8, backgroundColor: '#ff4d4f' }} />
-              )}
             </span>
           ),
         },
