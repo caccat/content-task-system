@@ -145,25 +145,77 @@ function App() {
     const fetchTaskStats = async () => {
       try {
         const today = dayjs().format('YYYY-MM-DD');
+        console.log('[fetchTaskStats] today=', today);
 
         // 只查询今天截止的任务，避免全表拉取触发 Supabase 1000 行限制
-        const { data: todayTasksData } = await supabase
+        const { data: todayTasksData, error: tasksError } = await supabase
           .from('tasks')
-          .select('id')
+          .select('id, deadline')
           .eq('deadline', today);
 
+        console.log('[fetchTaskStats] tasks query error:', tasksError);
+        console.log('[fetchTaskStats] todayTasksData length:', todayTasksData?.length);
+        if (todayTasksData && todayTasksData.length > 0) {
+          console.log('[fetchTaskStats] 第一个任务 deadline 样例:', todayTasksData[0].deadline);
+        }
+
         if (!todayTasksData || todayTasksData.length === 0) {
-          setTaskStats({ draft: 0, ready: 0, completed: 0 });
+          console.log('[fetchTaskStats] 今天任务为空，尝试用 gte/lte 范围查询...');
+          
+          // fallback: 用日期范围查询
+          const startOfDay = dayjs().startOf('day').toISOString();
+          const endOfDay = dayjs().endOf('day').toISOString();
+          const { data: fallbackTasks, error: fallbackError } = await supabase
+            .from('tasks')
+            .select('id, deadline')
+            .gte('deadline', startOfDay)
+            .lte('deadline', endOfDay);
+            
+          console.log('[fetchTaskStats] fallback query error:', fallbackError);
+          console.log('[fetchTaskStats] fallbackTasks length:', fallbackTasks?.length);
+          if (fallbackTasks && fallbackTasks.length > 0) {
+            console.log('[fetchTaskStats] fallback 第一个任务 deadline 样例:', fallbackTasks[0].deadline);
+            console.log('[fetchTaskStats] startOfDay:', startOfDay, 'endOfDay:', endOfDay);
+          }
+
+          if (!fallbackTasks || fallbackTasks.length === 0) {
+            setTaskStats({ draft: 0, ready: 0, completed: 0 });
+            return;
+          }
+
+          const taskIds = fallbackTasks.map(t => t.id);
+
+          const { data: articlesData } = await supabase
+            .from('articles')
+            .select('status, task_id')
+            .in('task_id', taskIds);
+
+          console.log('[fetchTaskStats] articlesData length:', articlesData?.length);
+
+          if (!articlesData) return;
+
+          const stats = { draft: 0, ready: 0, completed: 0 };
+          articlesData.forEach(article => {
+            if (article.status === 'draft') stats.draft++;
+            else if (article.status === 'ready') stats.ready++;
+            else if (article.status === 'published') stats.completed++;
+          });
+
+          console.log('[fetchTaskStats] 最终统计 →', JSON.stringify(stats));
+          setTaskStats(stats);
           return;
         }
 
         const taskIds = todayTasksData.map(t => t.id);
 
         // 只查今天任务关联的文章
-        const { data: articlesData } = await supabase
+        const { data: articlesData, error: articlesError } = await supabase
           .from('articles')
           .select('status, task_id')
           .in('task_id', taskIds);
+
+        console.log('[fetchTaskStats] articles query error:', articlesError);
+        console.log('[fetchTaskStats] articlesData length:', articlesData?.length);
 
         if (!articlesData) return;
 
@@ -175,6 +227,7 @@ function App() {
           else if (article.status === 'published') stats.completed++;
         });
 
+        console.log('[fetchTaskStats] 最终统计 →', JSON.stringify(stats));
         setTaskStats(stats);
       } catch (err) {
         console.error('Error fetching task stats:', err);
