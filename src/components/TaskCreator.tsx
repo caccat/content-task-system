@@ -1999,10 +1999,61 @@ function OverdueTasksDeleter() {
     });
   };
 
+  const totalTaskCount = overdueByDate.reduce((sum, g) => sum + g.taskCount, 0);
+  const totalArticleCount = overdueByDate.reduce((sum, g) => sum + g.articleCount, 0);
+
+  const handleDeleteAll = async () => {
+    if (overdueByDate.length === 0) return;
+    Modal.confirm({
+      title: '⚠️ 危险操作 - 删除全部逾期任务',
+      icon: <ExclamationCircleOutlined />,
+      content: (
+        <div>
+          <p>确定要<strong>一次性删除全部 {totalTaskCount} 个逾期任务</strong>（共 {totalArticleCount} 篇未完成文章）吗？</p>
+          <p style={{ color: '#ff4d4f' }}>此操作将删除所有日期分组的逾期任务，已完成的不受影响。此操作<strong>不可恢复</strong>！</p>
+        </div>
+      ),
+      okText: '确认全部删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          for (const group of overdueByDate) {
+            for (const task of group.taskList) {
+              await deleteTask(task.id);
+            }
+          }
+          message.success(`已成功删除全部 ${totalTaskCount} 个逾期任务`);
+          refreshTasks();
+        } catch {
+          message.error('部分删除失败，请重试');
+        }
+      },
+    });
+  };
+
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
-      <Title level={4}>删除逾期任务</Title>
-      <Text type="secondary">以下为截止日期早于今天、且有未完成文章的逾期任务。点击删除将只删除未完成的任务，已完成的不会被影响。</Text>
+      <Row justify="space-between" align="middle">
+        <Col>
+          <Space direction="vertical" size={2}>
+            <Title level={4} style={{ margin: 0 }}>删除逾期任务</Title>
+            <Text type="secondary">以下为截止日期早于今天、且有未完成文章的逾期任务。点击删除将只删除未完成的任务，已完成的不会被影响。</Text>
+          </Space>
+        </Col>
+        {!loading && overdueByDate.length > 1 && (
+          <Col>
+            <Button
+              type="primary"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={handleDeleteAll}
+            >
+              全部删除（{totalTaskCount} 个任务）
+            </Button>
+          </Col>
+        )}
+      </Row>
 
       {loading && <Text type="secondary">加载中...</Text>}
 
