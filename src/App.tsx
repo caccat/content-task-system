@@ -17,6 +17,7 @@ import {
   BookOutlined,
   LockOutlined,
   UnlockOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import TaskCreator from './components/TaskCreator';
 import ContentWriter from './components/ContentWriter';
@@ -34,7 +35,7 @@ const { Title, Paragraph } = Typography;
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
 // 子页面类型
-type CreatorSubPage = 'create' | 'created' | 'websites';
+type CreatorSubPage = 'create' | 'created' | 'websites' | 'overdue';
 type WriterSubPage = 'prompts' | 'draft' | 'ready' | 'completed';
 type PublisherSubPage = 'tasks' | 'ready' | 'completed';
 type SettingsSubPage = 'general' | 'notifications';
@@ -220,6 +221,11 @@ function App() {
           icon: <SettingOutlined />,
           label: '发布网站管理',
         },
+        {
+          key: 'creator-overdue',
+          icon: <DeleteOutlined />,
+          label: '删除逾期任务',
+        },
       ],
     },
     {
@@ -317,6 +323,8 @@ function App() {
             return <TaskCreator defaultView="created" />;
           case 'websites':
             return <WebsiteManager />;
+          case 'overdue':
+            return <TaskCreator defaultView="overdue" />;
           default:
             return <TaskCreator defaultView="create" />;
         }

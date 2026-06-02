@@ -21,6 +21,7 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
       await publishArticle(showConfirm.id, '');
       message.success('文章标记为已发布');
       setShowConfirm(null);
+      onClose();
     } catch {
       message.error('操作失败');
     }

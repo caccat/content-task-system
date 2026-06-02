@@ -1946,15 +1946,113 @@ function CreateTaskPage() {
   );
 }
 
+// 删除逾期任务页面
+function OverdueTasksDeleter() {
+  const { tasks, loading, refreshTasks, deleteTask } = useTasks();
+
+  // 按日期分组逾期任务（截止日期 < 今天 且 有未发布文章）
+  const overdueByDate = useMemo(() => {
+    const today = dayjs().startOf('day');
+    const groups: Record<string, { date: dayjs.Dayjs; taskList: typeof tasks; taskCount: number; articleCount: number }> = {};
+
+    tasks.forEach(task => {
+      const deadline = dayjs(task.deadline).startOf('day');
+      if (!deadline.isBefore(today)) return;
+      // 只保留有未完成文章的任务
+      const hasIncomplete = (task.articles || []).some((a: Article) => a.status !== 'published');
+      if (!hasIncomplete) return;
+
+      const key = deadline.format('YYYY-MM-DD');
+      if (!groups[key]) {
+        groups[key] = { date: deadline, taskList: [], taskCount: 0, articleCount: 0 };
+      }
+      groups[key].taskList.push(task);
+      groups[key].taskCount++;
+      groups[key].articleCount += (task.articles || []).filter((a: Article) => a.status !== 'published').length;
+    });
+
+    return Object.values(groups).sort((a, b) => a.date.isBefore(b.date) ? -1 : 1);
+  }, [tasks]);
+
+  const handleDeleteDate = async (dateKey: string) => {
+    const group = overdueByDate.find(g => g.date.format('YYYY-MM-DD') === dateKey);
+    if (!group) return;
+
+    Modal.confirm({
+      title: '确认删除',
+      icon: <ExclamationCircleOutlined />,
+      content: `确定删除 ${group.date.format('YYYY年M月D日')} 的 ${group.taskCount} 个逾期未完成任务（共 ${group.articleCount} 篇文章）？已完成的不受影响。此操作不可恢复`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          for (const task of group.taskList) {
+            await deleteTask(task.id);
+          }
+          message.success(`已删除 ${group.date.format('M月D日')} 的 ${group.taskCount} 个逾期任务`);
+          refreshTasks();
+        } catch {
+          message.error('删除失败，请重试');
+        }
+      },
+    });
+  };
+
+  return (
+    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+      <Title level={4}>删除逾期任务</Title>
+      <Text type="secondary">以下为截止日期早于今天、且有未完成文章的逾期任务。点击删除将只删除未完成的任务，已完成的不会被影响。</Text>
+
+      {loading && <Text type="secondary">加载中...</Text>}
+
+      {!loading && overdueByDate.length === 0 && (
+        <Empty description="暂无逾期任务" />
+      )}
+
+      {overdueByDate.map(group => (
+        <Card
+          key={group.date.format('YYYY-MM-DD')}
+          size="small"
+          style={{ borderLeft: '4px solid #ff4d4f' }}
+        >
+          <Row justify="space-between" align="middle">
+            <Col>
+              <Space direction="vertical" size={2}>
+                <Text strong style={{ fontSize: 16 }}>{group.date.format('YYYY年M月D日')}</Text>
+                <Text type="secondary">
+                  {group.taskCount} 个逾期任务 · {group.articleCount} 篇未完成文章
+                </Text>
+              </Space>
+            </Col>
+            <Col>
+              <Button
+                type="primary"
+                danger
+                icon={<DeleteOutlined />}
+                onClick={() => handleDeleteDate(group.date.format('YYYY-MM-DD'))}
+              >
+                删除
+              </Button>
+            </Col>
+          </Row>
+        </Card>
+      ))}
+    </Space>
+  );
+}
+
 // 主组件
-export default function TaskCreator({ defaultView = 'create' }: { defaultView?: 'create' | 'created' }) {
+export default function TaskCreator({ defaultView = 'create' }: { defaultView?: 'create' | 'created' | 'overdue' }) {
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
       <Card title="创建内容生产和发布任务" bordered={false}>
         {defaultView === 'create' ? (
           <CreateTaskPage />
-        ) : (
+        ) : defaultView === 'created' ? (
           <CreatedTasksList />
+        ) : (
+          <OverdueTasksDeleter />
         )}
       </Card>
     </div>
