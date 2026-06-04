@@ -1618,6 +1618,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
   // 筛选状态
   const [filterCity, setFilterCity] = useState<string | undefined>(undefined);
   const [filterPromptType, setFilterPromptType] = useState<string | undefined>(undefined);
+  const [filterWebsite, setFilterWebsite] = useState<string | undefined>(undefined);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
 
   // 日期变化时通知父组件（用于侧边栏统计联动）
@@ -1699,9 +1700,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
       if (filterCity && task.city !== filterCity) return false;
       if (filterPromptType && task.prompt_type !== filterPromptType) return false;
+      if (filterWebsite && (!task.websites || !task.websites.includes(filterWebsite))) return false;
       return true;
     });
-  }, [tasks, filterCity, filterPromptType, selectedDate]);
+  }, [tasks, filterCity, filterPromptType, filterWebsite, selectedDate]);
 
   const aiTasks = useMemo(() => {
     return tasks.filter(task => {
@@ -1715,9 +1717,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
       if (filterCity && task.city !== filterCity) return false;
       if (filterPromptType && task.prompt_type !== filterPromptType) return false;
+      if (filterWebsite && (!task.websites || !task.websites.includes(filterWebsite))) return false;
       return true;
     });
-  }, [tasks, filterCity, filterPromptType, selectedDate]);
+  }, [tasks, filterCity, filterPromptType, filterWebsite, selectedDate]);
 
   // 待发布任务（所有有 ready 状态文章的任务）
   const readyTasks = useMemo(() => {
@@ -1735,9 +1738,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
       if (filterCity && task.city !== filterCity) return false;
       if (filterPromptType && task.prompt_type !== filterPromptType) return false;
+      if (filterWebsite && (!task.websites || !task.websites.includes(filterWebsite))) return false;
       return true;
     });
-  }, [tasks, filterCity, filterPromptType, selectedDate]);
+  }, [tasks, filterCity, filterPromptType, filterWebsite, selectedDate]);
 
   // 已完成任务（所有文章都已发布的任务）
   const completedTasks = useMemo(() => {
@@ -1748,9 +1752,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
       if (filterCity && task.city !== filterCity) return false;
       if (filterPromptType && task.prompt_type !== filterPromptType) return false;
+      if (filterWebsite && (!task.websites || !task.websites.includes(filterWebsite))) return false;
       return true;
     });
-  }, [tasks, filterCity, filterPromptType, selectedDate]);
+  }, [tasks, filterCity, filterPromptType, filterWebsite, selectedDate]);
 
   const promptTypes = useMemo(() => {
     return prompts.map(p => ({ id: p.id, type: p.type }));
@@ -2428,12 +2433,22 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                     bordered={false}
                     options={promptTypes.map(pt => ({ label: pt.type, value: pt.id }))}
                   />
-                  {(filterCity || filterPromptType) && (
+                  <Select
+                    placeholder="选择发布网站"
+                    value={filterWebsite}
+                    onChange={setFilterWebsite}
+                    allowClear
+                    style={{ width: 180, borderRadius: 12 }}
+                    bordered={false}
+                    options={websites.map(w => ({ label: `${w.name} (${w.platform})`, value: w.id }))}
+                  />
+                  {(filterCity || filterPromptType || filterWebsite) && (
                     <Button
                       type="link"
                       onClick={() => {
                         setFilterCity(undefined);
                         setFilterPromptType(undefined);
+                        setFilterWebsite(undefined);
                       }}
                     >
                       清除筛选
