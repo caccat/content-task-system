@@ -18,6 +18,8 @@ import {
   LockOutlined,
   UnlockOutlined,
   DeleteOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import TaskCreator from './components/TaskCreator';
 import ContentWriter from './components/ContentWriter';
@@ -139,6 +141,7 @@ function App() {
   const [writerSubPage, setWriterSubPage] = useState<WriterSubPage>('draft');
   const [publisherSubPage, setPublisherSubPage] = useState<PublisherSubPage>('tasks');
   const [openKeys, setOpenKeys] = useState<string[]>(['creator', 'writer', 'publisher']);
+  const [collapsed, setCollapsed] = useState(false);
 
   // 任务统计数据（用于菜单徽章）
   const [taskStats, setTaskStats] = useState({ draft: 0, ready: 0, completed: 0 });
@@ -417,18 +420,64 @@ function App() {
           background-color: #c4cacd !important;
           color: #333 !important;
         }
+        /* 折叠状态下的菜单样式 */
+        .custom-menu.ant-menu-inline-collapsed {
+          width: 52px !important;
+        }
+        .custom-menu.ant-menu-inline-collapsed > .ant-menu-item,
+        .custom-menu.ant-menu-inline-collapsed > .ant-menu-submenu > .ant-menu-submenu-title {
+          padding-inline: 0 !important;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+        }
+        .custom-menu.ant-menu-inline-collapsed .ant-menu-item-icon {
+          font-size: 18px !important;
+          line-height: 1;
+        }
+        /* 折叠后的弹出菜单（popup submenu）样式 */
+        .custom-menu.ant-menu-inline-collapsed .ant-menu-submenu-popup .ant-menu-item {
+          background-color: #e8e4e1 !important;
+          color: #666 !important;
+        }
+        .custom-menu.ant-menu-inline-collapsed .ant-menu-submenu-popup .ant-menu-item:hover {
+          background-color: #c4cacd !important;
+        }
+        .custom-menu.ant-menu-inline-collapsed .ant-menu-submenu-popup .ant-menu-item-selected {
+          background-color: #c4cacd !important;
+          color: #333 !important;
+        }
+        /* 弹出菜单子菜单项样式 */
+        .custom-menu.ant-menu-inline-collapsed .ant-menu-submenu-popup .ant-menu-submenu-title {
+          background-color: #b8b4b1 !important;
+          color: #000 !important;
+          font-weight: 600 !important;
+        }
       `}</style>
       <Layout style={{ minHeight: '100vh', background: 'rgba(255, 248, 220, 0.25)' }}>
       <Sider 
-        width={260} 
+        width={260}
+        collapsedWidth={72}
+        collapsible
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
+        trigger={null}
         style={{ 
           background: '#ffffff',
           borderRadius: '0 24px 24px 0',
           overflow: 'hidden',
+          transition: 'all 0.2s ease',
         }}
       >
-        <div style={{ padding: '24px 20px', borderBottom: '1px solid #333' }}>
-          <Space align="center">
+        <div style={{
+          padding: collapsed ? '16px 10px' : '24px 20px',
+          borderBottom: '1px solid #333',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          transition: 'all 0.2s ease',
+        }}>
+          <Space align="center" size={collapsed ? 0 : 12}>
             <div style={{ 
               width: 44, 
               height: 44, 
@@ -438,33 +487,56 @@ function App() {
               alignItems: 'center',
               justifyContent: 'center',
               boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+              flexShrink: 0,
             }}>
               <BookOutlined style={{ fontSize: 24, color: '#5a5a5a' }} />
             </div>
-            <div>
-              <div style={{ color: '#333', fontSize: 18, fontWeight: 700 }}>内容管理系统</div>
-              <div style={{ color: '#666', fontSize: 12, letterSpacing: 1 }}>Powered by rrrr</div>
-            </div>
+            {!collapsed && (
+              <div>
+                <div style={{ color: '#333', fontSize: 18, fontWeight: 700, whiteSpace: 'nowrap' }}>内容管理系统</div>
+                <div style={{ color: '#666', fontSize: 12, letterSpacing: 1, whiteSpace: 'nowrap' }}>Powered by rrrr</div>
+              </div>
+            )}
           </Space>
         </div>
-        {/* 侧边栏统计日期锁定 */}
-        <div style={{ padding: '8px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f5f5f5' }}>
-          <span style={{ fontSize: 12, color: '#666' }}>
-            统计日期: {statsDate.format('YYYY-MM-DD')}
-            {isStatsLocked && <Tag color="blue" style={{ marginLeft: 6, fontSize: 11 }}>已锁定</Tag>}
-          </span>
+        {/* 折叠按钮 */}
+        <div style={{
+          textAlign: 'center',
+          padding: '4px 0',
+          cursor: 'pointer',
+          borderBottom: '1px solid #e8e8e8',
+          background: '#fafafa',
+          transition: 'all 0.2s ease',
+        }}>
           <Button
             type="text"
             size="small"
-            icon={isStatsLocked ? <LockOutlined /> : <UnlockOutlined />}
-            onClick={() => setIsStatsLocked(!isStatsLocked)}
-            title={isStatsLocked ? '解锁日期（跟随页面选择器）' : '锁定日期（不跟随选择器变化）'}
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setCollapsed(!collapsed)}
+            style={{ width: '100%', color: '#666', fontSize: 16 }}
           />
         </div>
+        {/* 侧边栏统计日期锁定 */}
+        {!collapsed && (
+          <div style={{ padding: '8px 16px', borderBottom: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f5f5f5' }}>
+            <span style={{ fontSize: 12, color: '#666' }}>
+              统计日期: {statsDate.format('YYYY-MM-DD')}
+              {isStatsLocked && <Tag color="blue" style={{ marginLeft: 6, fontSize: 11 }}>已锁定</Tag>}
+            </span>
+            <Button
+              type="text"
+              size="small"
+              icon={isStatsLocked ? <LockOutlined /> : <UnlockOutlined />}
+              onClick={() => setIsStatsLocked(!isStatsLocked)}
+              title={isStatsLocked ? '解锁日期（跟随页面选择器）' : '锁定日期（不跟随选择器变化）'}
+            />
+          </div>
+        )}
         <Menu
           mode="inline"
           theme="light"
           className="custom-menu"
+          inlineCollapsed={collapsed}
           selectedKeys={
             currentRole === 'creator'
               ? ['creator', `creator-${creatorSubPage}`]
@@ -476,10 +548,10 @@ function App() {
                     ? ['settings']
                     : [currentRole]
           }
-          openKeys={openKeys}
+          openKeys={collapsed ? [] : openKeys}
           onOpenChange={setOpenKeys}
           style={{ 
-            height: 'calc(100% - 89px)', 
+            height: collapsed ? 'calc(100% - 67px)' : 'calc(100% - 130px)',
             background: '#e8e4e1',
             borderRight: 0,
             padding: '12px',
