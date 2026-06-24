@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Card, List, Badge, Tag, Button, Checkbox, message, Typography, Space, Progress, Modal, Input, Select, Row, Col, DatePicker } from 'antd';
-import { CheckCircleOutlined, GlobalOutlined, DeleteOutlined, ExclamationCircleOutlined, CopyOutlined, FilterOutlined, CalendarOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, GlobalOutlined, DeleteOutlined, ExclamationCircleOutlined, CopyOutlined, FilterOutlined, CalendarOutlined, SendOutlined } from '@ant-design/icons';
 import { useTasks, useArticles } from '../hooks/useSupabase';
 import { useWebsites } from '../hooks/useWebsites';
 import type { TaskWithArticles, Article } from '../types';
@@ -14,6 +14,63 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
   const { articles, publishArticle, loading } = useArticles(task.id);
   const [showConfirm, setShowConfirm] = useState<Article | null>(null);
   const { websites: managedWebsites, loading: websitesLoading } = useWebsites();
+  const [publishingLutuitui, setPublishingLutuitui] = useState<string | null>(null);
+
+  // ======== 鹿推推配置 ========
+  // TODO: 从鹿推推后台获取你的自媒体 mediaId 后，替换下面的值
+  const LUTUITUI_MEDIA_ID = ''; // 留空，等你拿到 mediaId 后填入
+
+  // 从 HTML 内容中提取纯文本标题
+  const extractTitle = (html: string, fallback: string): string => {
+    if (!html) return fallback;
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    // 优先取第一个 h1/h2/h3
+    const heading = div.querySelector('h1, h2, h3');
+    if (heading?.textContent) {
+      return heading.textContent.trim().substring(0, 100);
+    }
+    // 否则取纯文本前 50 字
+    const text = (div.textContent || '').trim();
+    return text.substring(0, 50) || fallback;
+  };
+
+  // 发布文章到鹿推推
+  const publishToLutuitui = async (article: Article) => {
+    if (!article.content) {
+      message.warning('文章内容为空，无法发布');
+      return;
+    }
+    setPublishingLutuitui(article.id);
+    try {
+      const title = extractTitle(article.content, `${task.city}文章`);
+      const response = await fetch('/api/lutuitui-publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          content: article.content,
+          mediaId: LUTUITUI_MEDIA_ID,
+          outOrderNo: article.id,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        message.success('已成功提交到鹿推推！');
+        // 同时标记为已发布
+        await publishArticle(article.id, '鹿推推');
+        onClose();
+      } else {
+        message.error(result.error || '发布失败');
+      }
+    } catch {
+      message.error('网络错误，请重试');
+    } finally {
+      setPublishingLutuitui(null);
+    }
+  };
 
   const handlePublish = async () => {
     if (!showConfirm) return;
@@ -102,6 +159,19 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
               >
                 复制HTML
               </Button>,
+              article.status !== 'published' && (
+                <Button
+                  key="lutuitui"
+                  type="primary"
+                  icon={<SendOutlined />}
+                  onClick={() => publishToLutuitui(article)}
+                  loading={publishingLutuitui === article.id}
+                  disabled={!article.content || !LUTUITUI_MEDIA_ID}
+                  title={!LUTUITUI_MEDIA_ID ? '请先配置 mediaId' : undefined}
+                >
+                  发布到鹿推推
+                </Button>
+              ),
               article.status === 'published' ? (
                 <Tag key="done" color="success" icon={<CheckCircleOutlined />}>
                   已发布 {article.published_by && `by ${article.published_by}`}
@@ -109,7 +179,6 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
               ) : (
                 <Button
                   key="publish"
-                  type="primary"
                   icon={<CheckCircleOutlined />}
                   onClick={() => setShowConfirm(article)}
                   disabled={article.status !== 'ready'}
