@@ -17,8 +17,7 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
   const [publishingLutuitui, setPublishingLutuitui] = useState<string | null>(null);
 
   // ======== 鹿推推配置 ========
-  // TODO: 从鹿推推后台获取你的自媒体 mediaId 后，替换下面的值
-  const LUTUITUI_MEDIA_ID = ''; // 留空，等你拿到 mediaId 后填入
+  const LUTUITUI_MEDIA_ID = 33083; // 测试媒体（上线后替换为正式媒体ID）
 
   // 从 HTML 内容中提取纯文本标题
   const extractTitle = (html: string, fallback: string): string => {
