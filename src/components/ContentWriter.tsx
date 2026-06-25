@@ -2440,7 +2440,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                     allowClear
                     showSearch
                     filterOption={(input, option) =>
-                      (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                     }
                     style={{ width: 180, borderRadius: 12 }}
                     bordered={false}

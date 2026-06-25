@@ -1,0 +1,6 @@
+[    1280ms] [LOG] App组件挂载：开始应用初始化 @ https://ai.lutuitui.com/assets/js/index-b6980834.js:5
+[    1302ms] [LOG] 从接口获取系统配置: {code: 200, desc: 操作成功, content: Object, timestamp: 1782359734059} @ https://ai.lutuitui.com/assets/js/index-b6980834.js:5
+[    1304ms] [LOG] 系统配置已保存到缓存 @ https://ai.lutuitui.com/assets/js/index-b6980834.js:5
+[    1304ms] [LOG] 应用启动：系统配置初始化成功 @ https://ai.lutuitui.com/assets/js/index-b6980834.js:5
+[    1304ms] [LOG] App组件挂载：应用初始化完成 @ https://ai.lutuitui.com/assets/js/index-b6980834.js:5
+[    1686ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ https://ai.lutuitui.com/#/login:0

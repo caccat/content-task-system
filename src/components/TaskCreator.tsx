@@ -106,7 +106,7 @@ function CustomWebsiteSelect({
       loading={loading}
       showSearch
       filterOption={(input, option) =>
-        (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+        String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
       }
       tokenSeparators={[]}
       tagRender={(props) => {
@@ -941,7 +941,7 @@ function DetailConfigPanel({
                         style={{ width: 200 }}
                         showSearch
                         filterOption={(input, option) =>
-                          (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+                          String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
                         }
                         onChange={(value) => updateConfig(type.id, idx, { websiteId: value })}
                       >
@@ -1052,7 +1052,7 @@ function ArticleEditModal({
             allowClear
             showSearch
             filterOption={(input, option) =>
-              (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
             }
             options={managedWebsites.map(w => ({
               label: `${w.name} (${w.platform})`,
@@ -1788,7 +1788,7 @@ function CreatedTasksList() {
                 placeholder="选择发布网站"
                 showSearch
                 filterOption={(input, option) =>
-                  (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+                  String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                 }
                 options={[...DEFAULT_WEBSITES]}
               />

@@ -550,7 +550,7 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
                 allowClear
                 showSearch
                 filterOption={(input, option) =>
-                  (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+                  String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                 }
                 style={{ width: 180, borderRadius: 12 }}
                 bordered={false}

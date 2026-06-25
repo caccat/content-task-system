@@ -1,0 +1,30 @@
+- generic [ref=e4]:
+  - heading "鹿推推-让AI推荐您" [level=1] [ref=e7]
+  - generic [ref=e9]:
+    - tablist [ref=e10]:
+      - generic [ref=e12]:
+        - tab "登录" [selected] [ref=e14] [cursor=pointer]
+        - tab "注册" [ref=e16] [cursor=pointer]
+    - tabpanel "登录" [ref=e19]:
+      - generic [ref=e20]:
+        - generic [ref=e22]:
+          - generic "手机号" [ref=e24]
+          - textbox "手机号" [ref=e29]:
+            - /placeholder: 请输入手机号
+        - generic [ref=e32]:
+          - generic "密码" [ref=e34]
+          - generic [ref=e38]:
+            - textbox "密码" [ref=e39]:
+              - /placeholder: 请输入密码
+            - img "eye-invisible" [ref=e41] [cursor=pointer]:
+              - img [ref=e42]
+        - generic [ref=e45]:
+          - paragraph [ref=e46]: 登录即代表已阅读并同意 用户协议和 隐私条款
+          - button "忘记密码？" [ref=e47] [cursor=pointer]:
+            - generic [ref=e48]: 忘记密码？
+        - button "登 录" [ref=e49] [cursor=pointer]:
+          - generic [ref=e50]: 登 录
+      - generic [ref=e51]:
+        - separator [ref=e52]:
+          - generic [ref=e53]: 其他登录方式
+        - img "微信登录" [ref=e55] [cursor=pointer]
