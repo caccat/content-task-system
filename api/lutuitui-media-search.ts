@@ -34,8 +34,13 @@ async function fetchMediaPage(page: number, headers: Record<string, string>, key
   });
   const data = await resp.json();
   if (data.code !== '200') throw new Error(data.desc || '查询失败');
+  // DEBUG: 打印原始记录的所有字段名
+  const rawRecords = data.content.records || [];
+  if (rawRecords.length > 0) {
+    console.log('[DEBUG mediaList] 第一条原始字段:', JSON.stringify(rawRecords[0], null, 2));
+  }
   return {
-    records: (data.content.records || []).map((r: any): MediaItem => ({
+    records: rawRecords.map((r: any): MediaItem => ({
       id: r.id,
       name: r.name,
       source: 'media' as const,
@@ -45,6 +50,7 @@ async function fetchMediaPage(page: number, headers: Record<string, string>, key
     })),
     total: data.content.total || 0,
     pages: data.content.pages || 0,
+    _rawKeys: rawRecords.length > 0 ? Object.keys(rawRecords[0]) : [],
   };
 }
 
@@ -58,8 +64,13 @@ async function fetchSelfMediaPage(page: number, headers: Record<string, string>,
   });
   const data = await resp.json();
   if (data.code !== '200') throw new Error(data.desc || '查询失败');
+  // DEBUG: 打印原始记录的所有字段名
+  const rawRecords = data.content.records || [];
+  if (rawRecords.length > 0) {
+    console.log('[DEBUG selfMediaList] 第一条原始字段:', JSON.stringify(rawRecords[0], null, 2));
+  }
   return {
-    records: (data.content.records || []).map((r: any): MediaItem => ({
+    records: rawRecords.map((r: any): MediaItem => ({
       id: r.id,
       name: r.name,
       source: 'selfMedia' as const,
