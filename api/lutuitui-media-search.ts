@@ -96,7 +96,7 @@ async function fetchListPage(
 
 /**
  * 用 mediaList/selfMediaList 补全搜索结果的价格（channel 接口不返回 costPrice）
- * 通过并发取全列表前几页，按 ID 匹配价格
+ * 并发翻全列表前 N 页，按 ID 匹配价格
  */
 async function enrichPrices(
   records: MediaItem[],
@@ -106,24 +106,39 @@ async function enrichPrices(
   const selfIds = records.filter(r => r.source === 'selfMedia').map(r => r.id);
   if (mediaIds.length === 0 && selfIds.length === 0) return records;
 
+  console.log(`[enrichPrices] 待补价格: media=${mediaIds} selfMedia=${selfIds}`);
+
   const priceMap = new Map<string, number>();
 
-  // 最多并发取 3 页（每页200条），足够覆盖大多数搜索结果
   const fetchPrices = async (endpoint: '/media/mediaList' | '/media/selfMediaList', ids: number[]) => {
     const idSet = new Set(ids);
-    for (let page = 1; page <= 3; page++) {
+    const MAX_PAGES = 30; // 30页 × 200 = 6000条，覆盖大部分热门媒体
+    let foundCount = 0;
+    let checkedSample = false;
+
+    for (let page = 1; page <= MAX_PAGES; page++) {
       const remaining = [...idSet].filter(id => !priceMap.has(`${endpoint}:${id}`));
       if (remaining.length === 0) break;
       try {
         const result = await fetchListPage(endpoint, endpoint === '/media/mediaList' ? 'media' : 'selfMedia', page, headers);
+
+        // 采样打印第一条记录的全部字段，确认 costPrice 是否存在
+        if (!checkedSample && result.records.length > 0) {
+          console.log(`[enrichPrices] ${endpoint} page${page} 样本字段:`, Object.keys(result.records[0] as any));
+          console.log(`[enrichPrices] ${endpoint} page${page} 样本:`, JSON.stringify(result.records[0]).substring(0, 300));
+          checkedSample = true;
+        }
+
         for (const r of result.records) {
           if (idSet.has(r.id)) {
             priceMap.set(`${endpoint}:${r.id}`, r.costPrice ?? 0);
+            foundCount++;
           }
         }
-        if (result.records.length < (result as any).perPage) break; // 最后一页
+        if (result.records.length < 200) break; // 最后一页
       } catch { break; }
     }
+    console.log(`[enrichPrices] ${endpoint} 找到 ${foundCount}/${ids.length} 个价格`);
   };
 
   await Promise.all([
@@ -131,10 +146,14 @@ async function enrichPrices(
     selfIds.length > 0 ? fetchPrices('/media/selfMediaList', selfIds) : Promise.resolve(),
   ]);
 
-  return records.map(r => ({
-    ...r,
-    costPrice: priceMap.get(`${r.source === 'selfMedia' ? '/media/selfMediaList' : '/media/mediaList'}:${r.id}`) ?? r.costPrice,
-  }));
+  return records.map(r => {
+    const key = `${r.source === 'selfMedia' ? '/media/selfMediaList' : '/media/mediaList'}:${r.id}`;
+    const found = priceMap.get(key);
+    if (found === undefined) {
+      console.log(`[enrichPrices] 未找到价格: ${r.source} id=${r.id} name="${r.name}"`);
+    }
+    return { ...r, costPrice: found ?? r.costPrice };
+  });
 }
 
 /**
