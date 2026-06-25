@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Modal, Input, Table, Tag, Space, message, Empty, Button } from 'antd';
+import { Modal, Input, Table, Tag, Space, message, Empty, Button, Segmented } from 'antd';
 import { SearchOutlined, LinkOutlined } from '@ant-design/icons';
 import type { LutuituiMedia } from '../types';
 
@@ -10,11 +10,20 @@ interface MediaSearchModalProps {
   initialKeyword?: string;
 }
 
-const sourceColors: Record<string, string> = { media: 'purple', selfMedia: 'orange' };
-const sourceLabels: Record<string, string> = { media: '媒体', selfMedia: '自媒体' };
+type MediaSource = 'media' | 'selfMedia' | 'all';
+
+const sourceMap: Record<MediaSource, { label: string; color: string }> = {
+  media: { label: '媒体库 (5.2万)', color: 'purple' },
+  selfMedia: { label: '自媒体库 (7.4万)', color: 'orange' },
+  all: { label: '全部', color: 'default' },
+};
+
+const sourceTagColors: Record<string, string> = { media: 'purple', selfMedia: 'orange' };
+const sourceTagLabels: Record<string, string> = { media: '媒体', selfMedia: '自媒体' };
 
 export default function MediaSearchModal({ open, onClose, onSelect, initialKeyword = '' }: MediaSearchModalProps) {
   const [keyword, setKeyword] = useState('');
+  const [source, setSource] = useState<MediaSource>('media');
   const [records, setRecords] = useState<LutuituiMedia[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -23,17 +32,19 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
   useEffect(() => {
     if (open) {
       setKeyword(initialKeyword);
+      setSource('media');
       setRecords([]);
       setHasSearched(false);
       setLoading(false);
       if (initialKeyword) {
-        doSearch(initialKeyword);
+        doSearch(initialKeyword, 'media');
       }
     }
   }, [open, initialKeyword]);
 
-  const doSearch = useCallback(async (kw?: string) => {
+  const doSearch = useCallback(async (kw?: string, src?: MediaSource) => {
     const searchKeyword = (kw ?? keyword).trim();
+    const searchSource = src ?? source;
     if (!searchKeyword) return;
 
     setLoading(true);
@@ -44,7 +55,7 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
       const response = await fetch('/api/lutuitui-media-search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword: searchKeyword }),
+        body: JSON.stringify({ keyword: searchKeyword, source: searchSource }),
       });
       const result = await response.json();
       if (result.success) {
@@ -57,7 +68,16 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
     } finally {
       setLoading(false);
     }
-  }, [keyword]);
+  }, [keyword, source]);
+
+  const handleSourceChange = (val: string | number) => {
+    const newSource = val as MediaSource;
+    setSource(newSource);
+    // 如果已经搜过，用新来源重新搜
+    if (hasSearched && keyword.trim()) {
+      doSearch(keyword, newSource);
+    }
+  };
 
   const handleSelect = (media: LutuituiMedia) => {
     onSelect({
@@ -80,8 +100,8 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
         <Space>
           <strong>{text}</strong>
           {record.source && (
-            <Tag color={sourceColors[record.source]} style={{ fontSize: 11 }}>
-              {sourceLabels[record.source]}
+            <Tag color={sourceTagColors[record.source]} style={{ fontSize: 11 }}>
+              {sourceTagLabels[record.source]}
             </Tag>
           )}
         </Space>
@@ -136,9 +156,20 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
       footer={null}
     >
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <Segmented
+            value={source}
+            onChange={handleSourceChange}
+            options={[
+              { value: 'media', label: '媒体库' },
+              { value: 'selfMedia', label: '自媒体库' },
+              { value: 'all', label: '全部' },
+            ]}
+          />
+        </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Input
-            placeholder="搜索媒体名称、平台、地区或ID..."
+            placeholder={`搜索${sourceMap[source].label.replace(/\s*\([^)]*\)/, '')}名称、平台、地区或ID...`}
             value={keyword}
             onChange={e => setKeyword(e.target.value)}
             prefix={<SearchOutlined />}
@@ -160,10 +191,13 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
         {hasSearched && (
           <div style={{ color: '#999', fontSize: 12 }}>
             {loading ? (
-              <span style={{ color: '#faad14' }}>正在搜索中，同时检索媒体库和自媒体库...</span>
+              <span style={{ color: '#faad14' }}>
+                正在搜索 {sourceMap[source].label.replace(/\s*\([^)]*\)/, '')}...
+              </span>
             ) : (
               <span>
                 找到 <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{records.length}</span> 条匹配结果
+                <span style={{ color: '#bbb', marginLeft: 6 }}>（{sourceMap[source].label.replace(/\s*\([^)]*\)/, '')}）</span>
               </span>
             )}
           </div>
@@ -182,7 +216,7 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
               ? <Empty description="正在搜索中..." />
               : hasSearched
                 ? <Empty description="未找到匹配的媒体，尝试其他关键词" />
-                : <Empty description="输入关键词搜索鹿推推自媒体和媒体库" />
+                : <Empty description="选择库并输入关键词搜索鹿推推媒体" />
           }}
         />
       </Space>

@@ -77,66 +77,58 @@ function matchesKeyword(item: MediaItem, kw: string): boolean {
   );
 }
 
-// 并发加载全部页面并过滤
-async function searchAll(keyword: string, headers: Record<string, string>) {
+// 搜媒体库（新闻媒体，262页，每页200条，快）
+async function searchMediaList(keyword: string, headers: Record<string, string>) {
   const kw = keyword.toLowerCase();
-  const allResults: MediaItem[] = [];
+  const results: MediaItem[] = [];
+  const first = await fetchMediaPage(1, headers);
+  results.push(...first.records.filter(r => matchesKeyword(r, kw)));
 
-  // 1. 先搜 mediaList（新闻媒体，262页，快）
-  try {
-    const first = await fetchMediaPage(1, headers);
-    allResults.push(...first.records.filter(r => matchesKeyword(r, kw)));
-
-    const totalPages = first.pages;
-    for (let batchStart = 2; batchStart <= totalPages; batchStart += CONCURRENCY) {
-      const batchPages: number[] = [];
-      for (let p = batchStart; p < Math.min(batchStart + CONCURRENCY, totalPages + 1); p++) {
-        batchPages.push(p);
-      }
-      const results = await Promise.allSettled(
-        batchPages.map(p => fetchMediaPage(p, headers))
-      );
-      for (const r of results) {
-        if (r.status === 'fulfilled') {
-          allResults.push(...r.value.records.filter(rec => matchesKeyword(rec, kw)));
-        }
+  const totalPages = first.pages;
+  for (let batchStart = 2; batchStart <= totalPages; batchStart += CONCURRENCY) {
+    const batchPages: number[] = [];
+    for (let p = batchStart; p < Math.min(batchStart + CONCURRENCY, totalPages + 1); p++) {
+      batchPages.push(p);
+    }
+    const settled = await Promise.allSettled(
+      batchPages.map(p => fetchMediaPage(p, headers))
+    );
+    for (const r of settled) {
+      if (r.status === 'fulfilled') {
+        results.push(...r.value.records.filter(rec => matchesKeyword(rec, kw)));
       }
     }
-  } catch (e: any) {
-    console.error('[mediaList搜索] 失败:', e.message);
   }
+  return results;
+}
 
-  // 2. 再搜 selfMediaList（自媒体）—— 全部页，带超时保护
-  const DEADLINE = Date.now() + 50_000; // Vercel 60s 超时，留 10s buffer
-  try {
-    const first = await fetchSelfMediaPage(1, headers);
-    allResults.push(...first.records.filter(r => matchesKeyword(r, kw)));
+// 搜自媒体库（74k条，每页20条，较慢，带超时保护）
+async function searchSelfMediaList(keyword: string, headers: Record<string, string>) {
+  const kw = keyword.toLowerCase();
+  const results: MediaItem[] = [];
 
-    const totalSelfPages = first.pages;
-    for (let batchStart = 2; batchStart <= totalSelfPages; batchStart += CONCURRENCY) {
-      // 超时保护：剩余不到 5 秒就停止
-      if (Date.now() > DEADLINE - 5000) {
-        console.log(`[selfMediaList搜索] 接近超时，已搜到第 ${batchStart - 1}/${totalSelfPages} 页，提前结束`);
-        break;
-      }
-      const batchEnd = Math.min(batchStart + CONCURRENCY - 1, totalSelfPages);
-      const batchPages: number[] = [];
-      for (let p = batchStart; p <= batchEnd; p++) batchPages.push(p);
+  const first = await fetchSelfMediaPage(1, headers);
+  results.push(...first.records.filter(r => matchesKeyword(r, kw)));
 
-      const results = await Promise.allSettled(
-        batchPages.map(p => fetchSelfMediaPage(p, headers))
-      );
-      for (const r of results) {
-        if (r.status === 'fulfilled') {
-          allResults.push(...r.value.records.filter(rec => matchesKeyword(rec, kw)));
-        }
+  const totalPages = first.pages;
+  const DEADLINE = Date.now() + 50_000;
+  for (let batchStart = 2; batchStart <= totalPages; batchStart += CONCURRENCY) {
+    if (Date.now() > DEADLINE - 5000) {
+      console.log(`[selfMediaList] 接近超时，已搜到第 ${batchStart - 1}/${totalPages} 页`);
+      break;
+    }
+    const batchEnd = Math.min(batchStart + CONCURRENCY - 1, totalPages);
+    const batchPages = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
+    const settled = await Promise.allSettled(
+      batchPages.map(p => fetchSelfMediaPage(p, headers))
+    );
+    for (const r of settled) {
+      if (r.status === 'fulfilled') {
+        results.push(...r.value.records.filter(rec => matchesKeyword(rec, kw)));
       }
     }
-  } catch (e: any) {
-    console.error('[selfMediaList搜索] 失败:', e.message);
   }
-
-  return allResults;
+  return results;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -148,7 +140,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: '只支持 POST 请求' });
 
   try {
-    const { keyword, current = 1, size = 20 } = req.body || {};
+    const { keyword, source = 'media', current = 1, size = 20 } = req.body || {};
 
     const appId = process.env.LUTUITUI_APP_ID;
     const apiKey = process.env.LUTUITUI_API_KEY;
@@ -160,8 +152,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 有关键词 → 服务端全量搜索
     if (keyword && keyword.trim()) {
-      console.log(`[鹿推推搜索] 搜索关键词: "${keyword}"`);
-      const results = await searchAll(keyword.trim(), headers);
+      console.log(`[鹿推推搜索] 关键词: "${keyword.trim()}", 来源: ${source}`);
+      let results: MediaItem[];
+
+      if (source === 'selfMedia') {
+        results = await searchSelfMediaList(keyword.trim(), headers);
+      } else if (source === 'all') {
+        // 并发搜两个库
+        const [mediaResults, selfResults] = await Promise.allSettled([
+          searchMediaList(keyword.trim(), headers),
+          searchSelfMediaList(keyword.trim(), headers),
+        ]);
+        results = [
+          ...(mediaResults.status === 'fulfilled' ? mediaResults.value : []),
+          ...(selfResults.status === 'fulfilled' ? selfResults.value : []),
+        ];
+      } else {
+        // 默认搜媒体库
+        results = await searchMediaList(keyword.trim(), headers);
+      }
+
       console.log(`[鹿推推搜索] 找到 ${results.length} 条匹配`);
 
       return res.status(200).json({
@@ -176,8 +186,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 无关键词 → 简单分页（默认用 mediaList）
-    const data = await fetchMediaPage(current, headers);
+    // 无关键词 → 简单分页
+    const data = source === 'selfMedia'
+      ? await fetchSelfMediaPage(current, headers)
+      : await fetchMediaPage(current, headers);
     return res.status(200).json({
       success: true,
       data: {
