@@ -3,8 +3,8 @@ import { Modal, Input, Table, Tag, Space, message, Empty, Button, Progress } fro
 import { SearchOutlined, LinkOutlined, StopOutlined } from '@ant-design/icons';
 import type { LutuituiMedia } from '../types';
 
-const MAX_AUTO_PAGES = 125; // 125 页 × 20 条 = 2500 条，足够覆盖绝大多数搜索
-const MIN_MATCHES_BEFORE_STOP = 10; // 找到 10 个匹配后停止自动翻页
+const BATCH_SIZE = 10; // 每批并发加载 10 页
+const MIN_MATCHES_BEFORE_STOP = 10; // 找到 10 个匹配后停止
 
 interface MediaSearchModalProps {
   open: boolean;
@@ -13,17 +13,27 @@ interface MediaSearchModalProps {
   initialKeyword?: string;
 }
 
+// 过滤函数
+function matchesKeyword(record: LutuituiMedia, kw: string): boolean {
+  return (
+    record.name.toLowerCase().includes(kw) ||
+    record.platformName.toLowerCase().includes(kw) ||
+    record.regionName.toLowerCase().includes(kw) ||
+    String(record.id).includes(kw)
+  );
+}
+
 export default function MediaSearchModal({ open, onClose, onSelect, initialKeyword = '' }: MediaSearchModalProps) {
   const [keyword, setKeyword] = useState('');
   const [allRecords, setAllRecords] = useState<LutuituiMedia[]>([]);
   const [loading, setLoading] = useState(false);
-  const [autoLoading, setAutoLoading] = useState(false); // 是否在自动翻页
+  const [autoLoading, setAutoLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
   const [hasSearched, setHasSearched] = useState(false);
   const [autoPagesLoaded, setAutoPagesLoaded] = useState(0);
   const stopAutoRef = useRef(false);
-  const totalPagesRef = useRef(0); // 用 ref 避免闭包陈旧问题
+  const totalPagesRef = useRef(0);
 
   // 打开弹窗时重置
   useEffect(() => {
@@ -37,9 +47,8 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
       setAutoLoading(false);
       setAutoPagesLoaded(0);
       stopAutoRef.current = false;
-      // 如果有初始关键词，自动搜索
       if (initialKeyword) {
-        startSearch(1, initialKeyword);
+        startSearch(initialKeyword);
       }
     }
   }, [open, initialKeyword]);
@@ -61,51 +70,51 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
     throw new Error(result.error || '加载失败');
   }, []);
 
-  // 自动翻页搜索：从 startPage 开始逐页加载，直到找到足够匹配或达到上限
-  const autoPaginateSearch = useCallback(async (startPage: number, searchKeyword: string) => {
+  // 并发批量加载：每批 BATCH_SIZE 页，直到遍历全部或用户停止
+  const concurrentSearch = useCallback(async (startPage: number, searchKeyword: string) => {
     setAutoLoading(true);
     stopAutoRef.current = false;
-    let totalFound = 0;
-    let page = startPage;
-    const maxPage = Math.min(startPage + MAX_AUTO_PAGES - 1, totalPagesRef.current || 9999);
+    const totalPages = totalPagesRef.current;
+    if (totalPages <= 0) { setAutoLoading(false); setLoading(false); return; }
 
-    while (page <= maxPage && !stopAutoRef.current) {
+    let batchStart = startPage;
+    let foundEnough = false;
+
+    while (batchStart <= totalPages && !stopAutoRef.current && !foundEnough) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, totalPages);
+      const pages: number[] = [];
+      for (let p = batchStart; p <= batchEnd; p++) pages.push(p);
+
       try {
-        const data = await fetchPage(page);
-        totalPagesRef.current = data.pages;
-        setTotalRecords(data.total);
+        const results = await Promise.allSettled(pages.map(p => fetchPage(p)));
 
-        // 去重添加
-        setAllRecords(prev => {
-          const existingIds = new Set(prev.map(r => r.id));
-          const newRecords = data.records.filter((r: LutuituiMedia) => !existingIds.has(r.id));
-          return [...prev, ...newRecords];
-        });
-        setCurrentPage(page);
-        setAutoPagesLoaded(page - startPage + 1);
-
-        // 检查当前所有已加载的记录中有多少匹配
-        setAllRecords(prev => {
-          const kw = searchKeyword.toLowerCase();
-          const matches = prev.filter(r =>
-            r.name.toLowerCase().includes(kw) ||
-            r.platformName.toLowerCase().includes(kw) ||
-            r.regionName.toLowerCase().includes(kw) ||
-            String(r.id).includes(kw)
-          );
-          totalFound = matches.length;
-          return prev;
-        });
-
-        if (totalFound >= MIN_MATCHES_BEFORE_STOP) {
-          break;
+        const newRecords: LutuituiMedia[] = [];
+        for (const r of results) {
+          if (r.status === 'fulfilled') {
+            newRecords.push(...r.value.records);
+          }
         }
 
-        page++;
+        setAllRecords(prev => {
+          const existingIds = new Set(prev.map(r => r.id));
+          const deduped = newRecords.filter(r => !existingIds.has(r.id));
+          const merged = [...prev, ...deduped];
+
+          // 检查是否已有足够匹配
+          const kw = searchKeyword.toLowerCase();
+          if (merged.filter(r => matchesKeyword(r, kw)).length >= MIN_MATCHES_BEFORE_STOP) {
+            foundEnough = true;
+          }
+          return merged;
+        });
+
+        setCurrentPage(batchEnd);
+        setAutoPagesLoaded(batchEnd);
       } catch {
-        message.error('加载失败，已停止搜索');
-        break;
+        // 单批失败不中断，继续下一批
       }
+
+      batchStart = batchEnd + 1;
     }
 
     setAutoLoading(false);
@@ -113,51 +122,40 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
   }, [fetchPage]);
 
   // 开始搜索
-  const startSearch = useCallback((page: number, kw?: string) => {
-    const searchKeyword = kw ?? keyword;
-    if (!searchKeyword.trim()) return;
+  const startSearch = useCallback((kw?: string) => {
+    const searchKeyword = (kw ?? keyword).trim();
+    if (!searchKeyword) return;
 
     setLoading(true);
     setHasSearched(true);
     setAllRecords([]);
     setCurrentPage(1);
-    totalPagesRef.current = 0;
     setTotalRecords(0);
     setAutoPagesLoaded(0);
     stopAutoRef.current = false;
 
-    // 先加载第一页，然后自动翻页
-    fetchPage(page).then(data => {
-      if (stopAutoRef.current) {
-        setLoading(false);
-        return;
-      }
-      setAllRecords(data.records);
+    fetchPage(1).then(data => {
+      if (stopAutoRef.current) { setLoading(false); return; }
+
       totalPagesRef.current = data.pages;
       setTotalRecords(data.total);
-      setCurrentPage(page);
+      setAllRecords(data.records);
+      setCurrentPage(1);
       setAutoPagesLoaded(1);
 
-      // 检查第一页是否有足够匹配
       const kw = searchKeyword.toLowerCase();
-      const firstPageMatches = data.records.filter((r: LutuituiMedia) =>
-        r.name.toLowerCase().includes(kw) ||
-        r.platformName.toLowerCase().includes(kw) ||
-        r.regionName.toLowerCase().includes(kw) ||
-        String(r.id).includes(kw)
-      );
+      const firstMatches = data.records.filter(r => matchesKeyword(r, kw));
 
-      if (firstPageMatches.length < MIN_MATCHES_BEFORE_STOP && data.pages > 1) {
-        // 继续自动翻页
-        autoPaginateSearch(page + 1, searchKeyword);
+      if (firstMatches.length < MIN_MATCHES_BEFORE_STOP && data.pages > 1) {
+        concurrentSearch(2, searchKeyword);
       } else {
         setLoading(false);
       }
     }).catch(() => {
-      message.error('网络错误');
+      message.error('网络错误，请重试');
       setLoading(false);
     });
-  }, [keyword, fetchPage, autoPaginateSearch]);
+  }, [keyword, fetchPage, concurrentSearch]);
 
   const handleStopAuto = () => {
     stopAutoRef.current = true;
@@ -169,12 +167,7 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
   const filteredRecords = useMemo(() => {
     if (!keyword.trim()) return allRecords;
     const kw = keyword.toLowerCase();
-    return allRecords.filter(r =>
-      r.name.toLowerCase().includes(kw) ||
-      r.platformName.toLowerCase().includes(kw) ||
-      r.regionName.toLowerCase().includes(kw) ||
-      String(r.id).includes(kw)
-    );
+    return allRecords.filter(r => matchesKeyword(r, kw));
   }, [allRecords, keyword]);
 
   const handleSelect = (media: LutuituiMedia) => {
@@ -235,6 +228,10 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
     },
   ];
 
+  const progressPercent = totalPagesRef.current > 0
+    ? Math.min(Math.round((autoPagesLoaded / totalPagesRef.current) * 100), 99)
+    : 0;
+
   return (
     <Modal
       title="搜索并绑定鹿推推自媒体"
@@ -253,12 +250,12 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
             allowClear
             size="large"
             style={{ flex: 1 }}
-            onPressEnter={() => startSearch(1)}
+            onPressEnter={() => startSearch()}
           />
           <Button
             type="default"
             size="large"
-            onClick={() => startSearch(1)}
+            onClick={() => startSearch()}
             loading={loading && !autoLoading}
             disabled={autoLoading}
           >
@@ -287,7 +284,7 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
             )}
             {autoLoading && (
               <span style={{ marginLeft: 8, color: '#faad14' }}>
-                自动搜索中... (第 {currentPage} 页)
+                搜索中... {autoPagesLoaded}/{totalPagesRef.current} 页
               </span>
             )}
           </div>
@@ -295,7 +292,7 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
 
         {autoLoading && (
           <Progress
-            percent={Math.min(Math.round((autoPagesLoaded / MAX_AUTO_PAGES) * 100), 99)}
+            percent={progressPercent}
             status="active"
             showInfo={false}
             strokeColor="#1677ff"
@@ -313,28 +310,28 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
           scroll={{ y: 360 }}
           locale={{
             emptyText: autoLoading
-              ? <Empty description={`正在搜索中，已加载 ${allRecords.length} 条...`} />
+              ? <Empty description={`正在搜索中，已加载 ${allRecords.length.toLocaleString()} 条...`} />
               : hasSearched
                 ? <Empty description="未找到匹配的媒体，尝试其他关键词" />
                 : <Empty description="输入关键词搜索鹿推推自媒体" />
           }}
         />
 
-        {hasSearched && !autoLoading && filteredRecords.length < MIN_MATCHES_BEFORE_STOP && currentPage < totalPagesRef.current && (
+        {hasSearched && !autoLoading && currentPage < totalPagesRef.current && (
           <div style={{ textAlign: 'center' }}>
             <Button
               type="dashed"
-              onClick={() => autoPaginateSearch(currentPage + 1, keyword)}
+              onClick={() => concurrentSearch(currentPage + 1, keyword)}
               loading={autoLoading}
             >
-              加载更多数据（当前匹配 {filteredRecords.length} 条，可能更多）
+              继续搜索更多（已搜索 {currentPage}/{totalPagesRef.current} 页）
             </Button>
           </div>
         )}
 
         {hasSearched && !autoLoading && currentPage >= totalPagesRef.current && filteredRecords.length === 0 && totalRecords > 0 && (
           <div style={{ textAlign: 'center', color: '#999', fontSize: 12 }}>
-            已加载全部 {totalRecords.toLocaleString()} 条数据，未找到匹配项
+            已搜索全部 {totalRecords.toLocaleString()} 条数据，未找到匹配项
           </div>
         )}
       </Space>
