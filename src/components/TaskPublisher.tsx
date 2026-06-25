@@ -16,17 +16,22 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
   const { websites: managedWebsites, loading: websitesLoading } = useWebsites();
   const [publishingLutuitui, setPublishingLutuitui] = useState<string | null>(null);
 
-  // 从 HTML 内容中提取纯文本标题
-  const extractTitle = (html: string, fallback: string): string => {
-    if (!html) return fallback;
+  // 从 HTML 内容中提取纯文本标题，同时返回去掉标题后的正文
+  const extractTitleAndBody = (html: string, fallback: string): { title: string; body: string } => {
+    if (!html) return { title: fallback, body: '' };
     const div = document.createElement('div');
     div.innerHTML = html;
     const heading = div.querySelector('h1, h2, h3');
+    let title = fallback;
     if (heading?.textContent) {
-      return heading.textContent.trim().substring(0, 100);
+      title = heading.textContent.trim().substring(0, 100);
+      // 从正文中移除标题元素
+      heading.remove();
+    } else {
+      const text = (div.textContent || '').trim();
+      title = text.substring(0, 50) || fallback;
     }
-    const text = (div.textContent || '').trim();
-    return text.substring(0, 50) || fallback;
+    return { title, body: div.innerHTML };
   };
 
   // 根据文章的 website 字段查找鹿推推 mediaId
@@ -62,13 +67,13 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
     }
     setPublishingLutuitui(article.id);
     try {
-      const title = extractTitle(article.content, `${task.city}文章`);
+      const { title, body } = extractTitleAndBody(article.content, `${task.city}文章`);
       const response = await fetch('/api/lutuitui-publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title,
-          content: article.content,
+          content: body, // 去掉标题后的正文
           mediaId,
           outOrderNo: article.id,
         }),
