@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Card, List, Badge, Tag, Button, Checkbox, message, Typography, Space, Progress, Modal, Input, Select, Row, Col, DatePicker } from 'antd';
-import { CheckCircleOutlined, GlobalOutlined, DeleteOutlined, ExclamationCircleOutlined, CopyOutlined, FilterOutlined, CalendarOutlined, SendOutlined } from '@ant-design/icons';
+import { Card, List, Badge, Tag, Button, Checkbox, message, Typography, Space, Progress, Modal, Input, Select, Row, Col, DatePicker, Tooltip } from 'antd';
+import { CheckCircleOutlined, GlobalOutlined, DeleteOutlined, ExclamationCircleOutlined, CopyOutlined, FilterOutlined, CalendarOutlined, SendOutlined, WarningOutlined } from '@ant-design/icons';
 import { useTasks, useArticles } from '../hooks/useSupabase';
 import { useWebsites } from '../hooks/useWebsites';
 import type { TaskWithArticles, Article } from '../types';
@@ -16,26 +16,46 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
   const { websites: managedWebsites, loading: websitesLoading } = useWebsites();
   const [publishingLutuitui, setPublishingLutuitui] = useState<string | null>(null);
 
-  // ======== 鹿推推配置 ========
-  const LUTUITUI_MEDIA_ID = 33083; // 测试媒体（上线后替换为正式媒体ID）
-
   // 从 HTML 内容中提取纯文本标题
   const extractTitle = (html: string, fallback: string): string => {
     if (!html) return fallback;
     const div = document.createElement('div');
     div.innerHTML = html;
-    // 优先取第一个 h1/h2/h3
     const heading = div.querySelector('h1, h2, h3');
     if (heading?.textContent) {
       return heading.textContent.trim().substring(0, 100);
     }
-    // 否则取纯文本前 50 字
     const text = (div.textContent || '').trim();
     return text.substring(0, 50) || fallback;
   };
 
+  // 根据文章的 website 字段查找鹿推推 mediaId
+  const getLutuituiMediaInfo = (article: Article): { mediaId: number | null; mediaName: string | null; disabled: boolean; reason: string } => {
+    if (!article.website) {
+      return { mediaId: null, mediaName: null, disabled: true, reason: '文章未关联发布网站' };
+    }
+    const website = managedWebsites.find(w => w.id === article.website);
+    if (!website) {
+      return { mediaId: null, mediaName: null, disabled: true, reason: '未找到对应网站' };
+    }
+    if (!website.lutuitui_media_id) {
+      return { mediaId: null, mediaName: null, disabled: true, reason: `网站"${website.name}"未绑定鹿推推` };
+    }
+    return {
+      mediaId: website.lutuitui_media_id,
+      mediaName: website.lutuitui_media_name || String(website.lutuitui_media_id),
+      disabled: false,
+      reason: '',
+    };
+  };
+
   // 发布文章到鹿推推
   const publishToLutuitui = async (article: Article) => {
+    const { mediaId, disabled, reason } = getLutuituiMediaInfo(article);
+    if (disabled) {
+      message.warning(reason);
+      return;
+    }
     if (!article.content) {
       message.warning('文章内容为空，无法发布');
       return;
@@ -49,7 +69,7 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
         body: JSON.stringify({
           title,
           content: article.content,
-          mediaId: LUTUITUI_MEDIA_ID,
+          mediaId,
           outOrderNo: article.id,
         }),
       });
@@ -58,7 +78,6 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
 
       if (result.success) {
         message.success('已成功提交到鹿推推！');
-        // 同时标记为已发布
         await publishArticle(article.id, '鹿推推');
         onClose();
       } else {
@@ -140,85 +159,103 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
         loading={loading}
         dataSource={readyArticles}
         locale={{ emptyText: '暂无可发布的文章，请等待内容生成完成' }}
-        renderItem={(article, index) => (
-          <List.Item
-            actions={[
-              <Button
-                key="copy"
-                icon={<CopyOutlined />}
-                onClick={() => {
-                  if (article.content) {
-                    navigator.clipboard.writeText(article.content);
-                    message.success('HTML 内容已复制到剪贴板');
-                  } else {
-                    message.warning('文章内容为空');
-                  }
-                }}
-                disabled={!article.content}
-              >
-                复制HTML
-              </Button>,
-              article.status !== 'published' && (
+        renderItem={(article, index) => {
+          const { mediaId, mediaName, disabled, reason } = getLutuituiMediaInfo(article);
+          return (
+            <List.Item
+              actions={[
                 <Button
-                  key="lutuitui"
-                  type="primary"
-                  icon={<SendOutlined />}
-                  onClick={() => publishToLutuitui(article)}
-                  loading={publishingLutuitui === article.id}
-                  disabled={!article.content || !LUTUITUI_MEDIA_ID}
-                  title={!LUTUITUI_MEDIA_ID ? '请先配置 mediaId' : undefined}
+                  key="copy"
+                  icon={<CopyOutlined />}
+                  onClick={() => {
+                    if (article.content) {
+                      navigator.clipboard.writeText(article.content);
+                      message.success('HTML 内容已复制到剪贴板');
+                    } else {
+                      message.warning('文章内容为空');
+                    }
+                  }}
+                  disabled={!article.content}
                 >
-                  发布到鹿推推
-                </Button>
-              ),
-              article.status === 'published' ? (
-                <Tag key="done" color="success" icon={<CheckCircleOutlined />}>
-                  已发布 {article.published_by && `by ${article.published_by}`}
-                </Tag>
-              ) : (
-                <Button
-                  key="publish"
-                  icon={<CheckCircleOutlined />}
-                  onClick={() => setShowConfirm(article)}
-                  disabled={article.status !== 'ready'}
-                >
-                  标记为已发布
-                </Button>
-              ),
-            ]}
-          >
-            <List.Item.Meta
-              avatar={
-                <Checkbox
-                  checked={article.status === 'published'}
-                  disabled
-                  style={{ marginTop: 4 }}
-                />
-              }
-              title={`文章 ${index + 1}`}
-              description={
-                <div>
-                  {article.content ? (
-                    <div 
-                      className="ql-editor" 
-                      dangerouslySetInnerHTML={{ __html: article.content.substring(0, 100) + '...' }}
-                      style={{ maxWidth: 400, overflow: 'hidden' }}
-                    />
-                  ) : (
-                    <Text type="secondary">暂无内容</Text>
-                  )}
-                  {article.published_at && (
-                    <div>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        发布时间：{dayjs(article.published_at).format('YYYY-MM-DD HH:mm')}
-                      </Text>
-                    </div>
-                  )}
-                </div>
-              }
-            />
-          </List.Item>
-        )}
+                  复制HTML
+                </Button>,
+                article.status !== 'published' && (
+                  <Tooltip key="lutuitui-tip" title={disabled ? reason : `发布到: ${mediaName}`}>
+                    <Button
+                      key="lutuitui"
+                      type="primary"
+                      icon={disabled ? <WarningOutlined /> : <SendOutlined />}
+                      onClick={() => publishToLutuitui(article)}
+                      loading={publishingLutuitui === article.id}
+                      disabled={disabled || !article.content}
+                    >
+                      发布到鹿推推
+                    </Button>
+                  </Tooltip>
+                ),
+                article.status === 'published' ? (
+                  <Tag key="done" color="success" icon={<CheckCircleOutlined />}>
+                    已发布 {article.published_by && `by ${article.published_by}`}
+                  </Tag>
+                ) : (
+                  <Button
+                    key="publish"
+                    icon={<CheckCircleOutlined />}
+                    onClick={() => setShowConfirm(article)}
+                    disabled={article.status !== 'ready'}
+                  >
+                    标记为已发布
+                  </Button>
+                ),
+              ]}
+            >
+              <List.Item.Meta
+                avatar={
+                  <Checkbox
+                    checked={article.status === 'published'}
+                    disabled
+                    style={{ marginTop: 4 }}
+                  />
+                }
+                title={
+                  <Space>
+                    <span>文章 {index + 1}</span>
+                    {article.website && managedWebsites.length > 0 && (
+                      <Tag color="geekblue" style={{ fontSize: 11 }}>
+                        {managedWebsites.find(w => w.id === article.website)?.name || article.website}
+                      </Tag>
+                    )}
+                    {mediaName && !disabled && (
+                      <Tag color="purple" style={{ fontSize: 11 }}>
+                        → {mediaName}
+                      </Tag>
+                    )}
+                  </Space>
+                }
+                description={
+                  <div>
+                    {article.content ? (
+                      <div
+                        className="ql-editor"
+                        dangerouslySetInnerHTML={{ __html: article.content.substring(0, 100) + '...' }}
+                        style={{ maxWidth: 400, overflow: 'hidden' }}
+                      />
+                    ) : (
+                      <Text type="secondary">暂无内容</Text>
+                    )}
+                    {article.published_at && (
+                      <div>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          发布时间：{dayjs(article.published_at).format('YYYY-MM-DD HH:mm')}
+                        </Text>
+                      </div>
+                    )}
+                  </div>
+                }
+              />
+            </List.Item>
+          );
+        }}
       />
 
       <Modal
@@ -241,7 +278,6 @@ interface TaskPublisherProps {
 }
 
 export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPublisherProps) {
-  // 如果是已完成状态，使用新的表格组件
   if (defaultStatus === 'completed') {
     return <CompletedTasksTable defaultStatus={defaultStatus} />;
   }
@@ -250,31 +286,25 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
   const [selectedTask, setSelectedTask] = useState<TaskWithArticles | null>(null);
   const { websites: managedWebsites } = useWebsites();
 
-  // 筛选状态
   const [filterCity, setFilterCity] = useState<string | undefined>(undefined);
   const [filterWebsite, setFilterWebsite] = useState<string | undefined>(undefined);
   const [filterStatus, setFilterStatus] = useState<string | undefined>(defaultStatus);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
 
-  // 日期变化时通知父组件
   const handleDateChange = (date: dayjs.Dayjs) => {
     setSelectedDate(date);
     onDateChange?.(date);
   };
 
-  // 计算逾期任务（截止日期早于今天且有未完成任务）
   const overdueTasksInfo = useMemo(() => {
     const today = dayjs().startOf('day');
     const overdueTasks = tasks.filter(task => {
       const deadline = dayjs(task.deadline).startOf('day');
-      // 截止日期早于今天
       if (!deadline.isBefore(today)) return false;
-      // 有未发布的文章
       const hasIncompleteArticle = task.articles.some(a => a.status !== 'published');
       return hasIncompleteArticle;
     });
 
-    // 按逾期日期分组
     const groupedByDate: Record<string, { date: dayjs.Dayjs; readyCount: number; ungeneratedCount: number }> = {};
     overdueTasks.forEach(task => {
       const deadline = dayjs(task.deadline);
@@ -282,10 +312,7 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
       if (!groupedByDate[dateKey]) {
         groupedByDate[dateKey] = { date: deadline, readyCount: 0, ungeneratedCount: 0 };
       }
-      
-      // 统计待发布和未生成
       const ready = task.articles.filter(a => a.status === 'ready').length;
-      // 已生成 = 状态为 ready 或 published 的文章数量（draft 不算真正生成）
       const generatedCount = task.articles.filter(a => a.status === 'ready' || a.status === 'published').length;
       const ungeneratedCount = Math.max(0, task.quantity - generatedCount);
       groupedByDate[dateKey].readyCount += ready;
@@ -295,12 +322,10 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
     return groupedByDate;
   }, [tasks]);
 
-  // 当 defaultStatus 变化时更新 filterStatus
   useEffect(() => {
     setFilterStatus(defaultStatus);
   }, [defaultStatus]);
 
-  // 发布者视角：根据文章状态判断任务进度
   const getTaskProgress = (task: TaskWithArticles) => {
     const readyCount = task.articles.filter(a => a.status === 'ready').length;
     const publishedCount = task.articles.filter(a => a.status === 'published').length;
@@ -314,7 +339,6 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
     return { color: 'default', text: '未生成', value: 'draft' };
   };
 
-  // 获取网站显示名称（主组件作用域）
   const getWebsiteLabels = (websites: string[]) => {
     if (managedWebsites.length === 0) return [];
     return websites.map(w => {
@@ -323,7 +347,6 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
     });
   };
 
-  // 按选择日期统计（按截止日期）
   const dateStats = useMemo(() => {
     const dateStr = selectedDate.format('YYYY-MM-DD');
     const dateTasks = tasks.filter(task => dayjs(task.deadline).format('YYYY-MM-DD') === dateStr);
@@ -355,12 +378,10 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
     };
   }, [tasks, selectedDate]);
 
-  // 筛选后的任务列表
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
       const progress = getTaskProgress(task);
 
-      // 按选择日期筛选（截止日期）
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
       if (filterCity && task.city !== filterCity) return false;
       if (filterWebsite && !task.websites.includes(filterWebsite)) return false;
@@ -404,7 +425,6 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
 
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-      {/* 页面标题 */}
       <div style={{ marginBottom: 32 }}>
         <Title level={2} style={{ margin: 0, fontWeight: 700, color: '#1a1a1a' }}>
           {defaultStatus === 'ready' ? '待发布任务' :
@@ -416,9 +436,8 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
         </Text>
       </div>
 
-      {/* 统计区域 */}
-      <Card 
-        style={{ 
+      <Card
+        style={{
           marginBottom: 24,
           background: '#e6f7ff',
           border: '1px solid #91d5ff',
@@ -445,7 +464,6 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
         </Space>
       </Card>
 
-      {/* 逾期任务提示 */}
       {Object.keys(overdueTasksInfo).length > 0 && (
         <Card
           style={{
@@ -482,10 +500,9 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
         </Card>
       )}
 
-      {/* 筛选 */}
-      <Card 
-        style={{ 
-          borderRadius: 20, 
+      <Card
+        style={{
+          borderRadius: 20,
           border: 'none',
           background: '#fff',
           boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
@@ -501,7 +518,7 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
                 value={selectedDate}
                 onChange={(date) => date && handleDateChange(date)}
                 format="YYYY-MM-DD"
-                style={{ 
+                style={{
                   width: 140,
                   borderRadius: 12,
                   border: '1px solid #e8e8e8',
@@ -559,7 +576,6 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
         </Row>
       </Card>
 
-      {/* 任务列表 */}
       <List
         loading={loading}
         grid={{ gutter: 24, xs: 1, sm: 2, lg: 3 }}
@@ -617,8 +633,8 @@ export default function TaskPublisher({ defaultStatus, onDateChange }: TaskPubli
                     <div style={{
                       height: '100%',
                       width: `${progressPercent}%`,
-                      background: progress.value === 'completed' ? 'linear-gradient(90deg, #52c41a, #73d13d)' : 
-                                 progress.value === 'ready' ? 'linear-gradient(90deg, #1890ff, #40a9ff)' : 
+                      background: progress.value === 'completed' ? 'linear-gradient(90deg, #52c41a, #73d13d)' :
+                                 progress.value === 'ready' ? 'linear-gradient(90deg, #1890ff, #40a9ff)' :
                                  'linear-gradient(90deg, #faad14, #ffc53d)',
                       borderRadius: 4,
                       transition: 'width 0.3s ease',

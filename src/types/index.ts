@@ -34,6 +34,21 @@ export interface Website {
   price: number;
   status: WebsiteStatus;
   status_updated_at: string;
+  lutuitui_media_id?: number | null;
+  lutuitui_media_name?: string | null;
+}
+
+// 鹿推推自媒体（从API返回的原始数据）
+export interface LutuituiMedia {
+  id: number;
+  name: string;
+  platformName: string;
+  platformCode: string;
+  regionName: string;
+  regionCode: string;
+  industryName: string;
+  costPrice: number;
+  entryUrl: string | null;
 }
 
 // 网站状态配置
