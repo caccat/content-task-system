@@ -26,7 +26,7 @@ function makeHeaders(appId: string, apiKey: string) {
 
 async function fetchMediaPage(page: number, headers: Record<string, string>, keyword = '') {
   const body: any = { page, perPage: MEDIA_PER_PAGE };
-  if (keyword) body.name = keyword; // 鹿推推 API 支持 name 搜索
+  if (keyword) body.keyword = keyword;
   const resp = await fetch(`${LUTUITUI_PRODUCTION}/media/mediaList`, {
     method: 'POST',
     headers,
@@ -50,7 +50,7 @@ async function fetchMediaPage(page: number, headers: Record<string, string>, key
 
 async function fetchSelfMediaPage(page: number, headers: Record<string, string>, keyword = '') {
   const body: any = { current: page, size: 20 };
-  if (keyword) body.name = keyword;
+  if (keyword) body.keyword = keyword;
   const resp = await fetch(`${LUTUITUI_PRODUCTION}/media/selfMediaList`, {
     method: 'POST',
     headers,
@@ -78,16 +78,18 @@ function matches(item: MediaItem, kw: string) {
   return s.includes(kw);
 }
 
-// 搜媒体库 —— 直接传 name 参数给鹿推推 API，又快又准
+// 搜媒体库 —— 传 keyword 给鹿推推 API，如果API不支持则兜底搜前200页
 async function searchMediaList(keyword: string, headers: Record<string, string>) {
   const kw = keyword.toLowerCase();
   const results: MediaItem[] = [];
   const first = await fetchMediaPage(1, headers, keyword);
-  // 如果 API 返回很多记录说明 name 参数没有生效，兜底客户端过滤
-  results.push(...(first.total > 500 ? first.records.filter(r => matches(r, kw)) : first.records));
+  const apiFilterWorks = first.total <= 500;
+  const useClientFilter = !apiFilterWorks;
+  results.push(...(useClientFilter ? first.records.filter(r => matches(r, kw)) : first.records));
 
-  const totalPages = first.pages;
-  const useClientFilter = first.total > 500;
+  const totalPages = apiFilterWorks ? first.pages : Math.min(first.pages, 200);
+  console.log(`[mediaList] apiFilterWorks=${apiFilterWorks}, totalPages=${totalPages}, first.pages=${first.pages}`);
+
   for (let batchStart = 2; batchStart <= totalPages; batchStart += CONCURRENCY) {
     const batchEnd = Math.min(batchStart + CONCURRENCY - 1, totalPages);
     const batchPages = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
@@ -104,17 +106,20 @@ async function searchMediaList(keyword: string, headers: Record<string, string>)
   return results;
 }
 
-// 搜自媒体库 —— 直接传 name 参数给鹿推推 API
+// 搜自媒体库 —— 传 keyword 给鹿推推 API，兜底只搜20页避免超时
 async function searchSelfMediaList(keyword: string, headers: Record<string, string>) {
   const kw = keyword.toLowerCase();
   const results: MediaItem[] = [];
   const DEADLINE = Date.now() + 50_000;
 
   const first = await fetchSelfMediaPage(1, headers, keyword);
-  const useClientFilter = first.total > 500;
+  const apiFilterWorks = first.total <= 500;
+  const useClientFilter = !apiFilterWorks;
   results.push(...(useClientFilter ? first.records.filter(r => matches(r, kw)) : first.records));
 
-  const totalPages = first.pages;
+  const totalPages = apiFilterWorks ? first.pages : Math.min(first.pages, 20);
+  console.log(`[selfMediaList] apiFilterWorks=${apiFilterWorks}, totalPages=${totalPages}, first.pages=${first.pages}`);
+
   for (let batchStart = 2; batchStart <= totalPages; batchStart += CONCURRENCY) {
     if (Date.now() > DEADLINE - 5000) {
       console.log(`[selfMediaList] 接近超时，已搜到第 ${batchStart - 1}/${totalPages} 页`);
