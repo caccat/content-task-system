@@ -40,7 +40,6 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
     const text = (div.textContent || '').trim();
     return { title: text.substring(0, 50) || fallback, body: div.innerHTML };
   };
-  };
 
   // 根据文章的 website 字段查找鹿推推 mediaId
   const getLutuituiMediaInfo = (article: Article): { mediaId: number | null; mediaName: string | null; disabled: boolean; reason: string } => {
