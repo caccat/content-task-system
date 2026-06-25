@@ -95,6 +95,49 @@ async function fetchListPage(
 }
 
 /**
+ * 用 mediaList/selfMediaList 补全搜索结果的价格（channel 接口不返回 costPrice）
+ * 通过并发取全列表前几页，按 ID 匹配价格
+ */
+async function enrichPrices(
+  records: MediaItem[],
+  headers: Record<string, string>,
+): Promise<MediaItem[]> {
+  const mediaIds = records.filter(r => r.source === 'media').map(r => r.id);
+  const selfIds = records.filter(r => r.source === 'selfMedia').map(r => r.id);
+  if (mediaIds.length === 0 && selfIds.length === 0) return records;
+
+  const priceMap = new Map<string, number>();
+
+  // 最多并发取 3 页（每页200条），足够覆盖大多数搜索结果
+  const fetchPrices = async (endpoint: '/media/mediaList' | '/media/selfMediaList', ids: number[]) => {
+    const idSet = new Set(ids);
+    for (let page = 1; page <= 3; page++) {
+      const remaining = [...idSet].filter(id => !priceMap.has(`${endpoint}:${id}`));
+      if (remaining.length === 0) break;
+      try {
+        const result = await fetchListPage(endpoint, endpoint === '/media/mediaList' ? 'media' : 'selfMedia', page, headers);
+        for (const r of result.records) {
+          if (idSet.has(r.id)) {
+            priceMap.set(`${endpoint}:${r.id}`, r.costPrice ?? 0);
+          }
+        }
+        if (result.records.length < (result as any).perPage) break; // 最后一页
+      } catch { break; }
+    }
+  };
+
+  await Promise.all([
+    mediaIds.length > 0 ? fetchPrices('/media/mediaList', mediaIds) : Promise.resolve(),
+    selfIds.length > 0 ? fetchPrices('/media/selfMediaList', selfIds) : Promise.resolve(),
+  ]);
+
+  return records.map(r => ({
+    ...r,
+    costPrice: priceMap.get(`${r.source === 'selfMedia' ? '/media/selfMediaList' : '/media/mediaList'}:${r.id}`) ?? r.costPrice,
+  }));
+}
+
+/**
  * 搜索 —— 按关键词搜索（每页最多20条），支持多页
  */
 async function doSearch(
@@ -121,6 +164,9 @@ async function doSearch(
     page = 1;
   }
 
+  // 补全价格（channel 接口不返回 costPrice）
+  records = await enrichPrices(records, headers);
+
   return {
     records,
     total: result.total,
@@ -137,10 +183,12 @@ async function doSearchBoth(keyword: string, headers: Record<string, string>, cu
     searchChannel('/channel/media', 'media', { page: current, size: Math.ceil(size / 2), keyword: keyword.trim() }, headers),
     searchChannel('/channel/self-media', 'selfMedia', { page: current, size: Math.ceil(size / 2), keyword: keyword.trim() }, headers),
   ]);
-  const records: MediaItem[] = [
+  let records: MediaItem[] = [
     ...(media.status === 'fulfilled' ? media.value.records : []),
     ...(self.status === 'fulfilled' ? self.value.records : []),
   ];
+  // 补全价格
+  records = await enrichPrices(records, headers);
   const total = (media.status === 'fulfilled' ? media.value.total : 0)
     + (self.status === 'fulfilled' ? self.value.total : 0);
   return { records, total, page: current, totalPages: 1 };
