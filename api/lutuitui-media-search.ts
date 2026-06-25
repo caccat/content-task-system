@@ -24,11 +24,13 @@ function makeHeaders(appId: string, apiKey: string) {
   };
 }
 
-async function fetchMediaPage(page: number, headers: Record<string, string>) {
+async function fetchMediaPage(page: number, headers: Record<string, string>, keyword = '') {
+  const body: any = { page, perPage: MEDIA_PER_PAGE };
+  if (keyword) body.name = keyword; // 鹿推推 API 支持 name 搜索
   const resp = await fetch(`${LUTUITUI_PRODUCTION}/media/mediaList`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ page, perPage: MEDIA_PER_PAGE }),
+    body: JSON.stringify(body),
   });
   const data = await resp.json();
   if (data.code !== '200') throw new Error(data.desc || '查询失败');
@@ -46,11 +48,13 @@ async function fetchMediaPage(page: number, headers: Record<string, string>) {
   };
 }
 
-async function fetchSelfMediaPage(page: number, headers: Record<string, string>) {
+async function fetchSelfMediaPage(page: number, headers: Record<string, string>, keyword = '') {
+  const body: any = { current: page, size: 20 };
+  if (keyword) body.name = keyword;
   const resp = await fetch(`${LUTUITUI_PRODUCTION}/media/selfMediaList`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ current: page, size: 20 }),
+    body: JSON.stringify(body),
   });
   const data = await resp.json();
   if (data.code !== '200') throw new Error(data.desc || '查询失败');
@@ -68,50 +72,49 @@ async function fetchSelfMediaPage(page: number, headers: Record<string, string>)
   };
 }
 
-function matchesKeyword(item: MediaItem, kw: string): boolean {
-  return (
-    item.name.toLowerCase().includes(kw) ||
-    (item.platformName || '').toLowerCase().includes(kw) ||
-    (item.regionName || '').toLowerCase().includes(kw) ||
-    String(item.id).includes(kw)
-  );
+// 兜底：万一 API 不支持 name 参数，客户端过滤
+function matches(item: MediaItem, kw: string) {
+  const s = `${item.name} ${item.platformName} ${item.regionName}`.toLowerCase();
+  return s.includes(kw);
 }
 
-// 搜媒体库（新闻媒体，262页，每页200条，快）
+// 搜媒体库 —— 直接传 name 参数给鹿推推 API，又快又准
 async function searchMediaList(keyword: string, headers: Record<string, string>) {
   const kw = keyword.toLowerCase();
   const results: MediaItem[] = [];
-  const first = await fetchMediaPage(1, headers);
-  results.push(...first.records.filter(r => matchesKeyword(r, kw)));
+  const first = await fetchMediaPage(1, headers, keyword);
+  // 如果 API 返回很多记录说明 name 参数没有生效，兜底客户端过滤
+  results.push(...(first.total > 500 ? first.records.filter(r => matches(r, kw)) : first.records));
 
   const totalPages = first.pages;
+  const useClientFilter = first.total > 500;
   for (let batchStart = 2; batchStart <= totalPages; batchStart += CONCURRENCY) {
-    const batchPages: number[] = [];
-    for (let p = batchStart; p < Math.min(batchStart + CONCURRENCY, totalPages + 1); p++) {
-      batchPages.push(p);
-    }
+    const batchEnd = Math.min(batchStart + CONCURRENCY - 1, totalPages);
+    const batchPages = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
     const settled = await Promise.allSettled(
-      batchPages.map(p => fetchMediaPage(p, headers))
+      batchPages.map(p => fetchMediaPage(p, headers, keyword))
     );
     for (const r of settled) {
       if (r.status === 'fulfilled') {
-        results.push(...r.value.records.filter(rec => matchesKeyword(rec, kw)));
+        const recs = useClientFilter ? r.value.records.filter(x => matches(x, kw)) : r.value.records;
+        results.push(...recs);
       }
     }
   }
   return results;
 }
 
-// 搜自媒体库（74k条，每页20条，较慢，带超时保护）
+// 搜自媒体库 —— 直接传 name 参数给鹿推推 API
 async function searchSelfMediaList(keyword: string, headers: Record<string, string>) {
   const kw = keyword.toLowerCase();
   const results: MediaItem[] = [];
+  const DEADLINE = Date.now() + 50_000;
 
-  const first = await fetchSelfMediaPage(1, headers);
-  results.push(...first.records.filter(r => matchesKeyword(r, kw)));
+  const first = await fetchSelfMediaPage(1, headers, keyword);
+  const useClientFilter = first.total > 500;
+  results.push(...(useClientFilter ? first.records.filter(r => matches(r, kw)) : first.records));
 
   const totalPages = first.pages;
-  const DEADLINE = Date.now() + 50_000;
   for (let batchStart = 2; batchStart <= totalPages; batchStart += CONCURRENCY) {
     if (Date.now() > DEADLINE - 5000) {
       console.log(`[selfMediaList] 接近超时，已搜到第 ${batchStart - 1}/${totalPages} 页`);
@@ -120,11 +123,12 @@ async function searchSelfMediaList(keyword: string, headers: Record<string, stri
     const batchEnd = Math.min(batchStart + CONCURRENCY - 1, totalPages);
     const batchPages = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
     const settled = await Promise.allSettled(
-      batchPages.map(p => fetchSelfMediaPage(p, headers))
+      batchPages.map(p => fetchSelfMediaPage(p, headers, keyword))
     );
     for (const r of settled) {
       if (r.status === 'fulfilled') {
-        results.push(...r.value.records.filter(rec => matchesKeyword(rec, kw)));
+        const recs = useClientFilter ? r.value.records.filter(x => matches(x, kw)) : r.value.records;
+        results.push(...recs);
       }
     }
   }
