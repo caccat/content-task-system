@@ -16,23 +16,30 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
   const { websites: managedWebsites, loading: websitesLoading } = useWebsites();
   const [publishingLutuitui, setPublishingLutuitui] = useState<string | null>(null);
 
-  // 从 HTML 内容中提取纯文本标题，同时返回去掉标题后的正文
+  // 提取标题：优先 h1，否则取第一行文本。只移除 h1，不影响其他内容。
   const extractTitleAndBody = (html: string, fallback: string): { title: string; body: string } => {
     if (!html) return { title: fallback, body: '' };
     const div = document.createElement('div');
     div.innerHTML = html;
-    // 只查找 h1 作为标题，h2/h3/h4...保留在正文中
+
+    // 优先 h1
     const h1 = div.querySelector('h1');
-    let title = fallback;
-    if (h1?.textContent) {
-      title = h1.textContent.trim().substring(0, 100);
-      // 只移除 h1 标题，保留其他 heading
-      h1.remove();
-    } else {
-      const text = (div.textContent || '').trim();
-      title = text.substring(0, 50) || fallback;
+    if (h1?.textContent?.trim()) {
+      const title = h1.textContent.trim().substring(0, 100);
+      h1.remove(); // 只移除 h1
+      return { title, body: div.innerHTML };
     }
-    return { title, body: div.innerHTML };
+
+    // 没有 h1，取第一个块级元素的文本作为标题（不移除）
+    const firstBlock = div.querySelector('p, div, h2, h3, h4, h5, h6, li, blockquote');
+    if (firstBlock?.textContent?.trim()) {
+      return { title: firstBlock.textContent.trim().substring(0, 50), body: div.innerHTML };
+    }
+
+    // 只有纯文本
+    const text = (div.textContent || '').trim();
+    return { title: text.substring(0, 50) || fallback, body: div.innerHTML };
+  };
   };
 
   // 根据文章的 website 字段查找鹿推推 mediaId
