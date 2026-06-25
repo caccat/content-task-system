@@ -84,6 +84,7 @@ export default function WebsiteManager() {
         price: editingData.price,
         lutuitui_media_id: editingData.lutuitui_media_id,
         lutuitui_media_name: editingData.lutuitui_media_name,
+        lutuitui_media_source: editingData.lutuitui_media_source,
       });
       setEditingId(null);
       setEditingData({});
@@ -150,6 +151,7 @@ export default function WebsiteManager() {
         status: newWebsite.status,
         lutuitui_media_id: newWebsite.lutuitui_media_id,
         lutuitui_media_name: newWebsite.lutuitui_media_name,
+        lutuitui_media_source: newWebsite.lutuitui_media_source,
       });
       setIsAdding(false);
       setNewWebsite({ name: '', platform: '', price: 0, status: undefined });
@@ -186,9 +188,9 @@ export default function WebsiteManager() {
   // 清除已绑定的鹿推推媒体
   const clearMediaBinding = (target: 'edit' | 'add') => {
     if (target === 'edit') {
-      setEditingData(prev => ({ ...prev, lutuitui_media_id: null, lutuitui_media_name: null }));
+      setEditingData(prev => ({ ...prev, lutuitui_media_id: null, lutuitui_media_name: null, lutuitui_media_source: null }));
     } else {
-      setNewWebsite(prev => ({ ...prev, lutuitui_media_id: undefined, lutuitui_media_name: undefined }));
+      setNewWebsite(prev => ({ ...prev, lutuitui_media_id: undefined, lutuitui_media_name: undefined, lutuitui_media_source: undefined }));
     }
     message.info('已解除绑定');
   };

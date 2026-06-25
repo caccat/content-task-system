@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 // 鹿推推 API 配置（文档：https://ai.lutuitui.com/api）
-const LUTUITUI_PRODUCTION = 'https://ai.lutuitui.com/api';
+const LUTUITUI_PRODUCTION = 'https://ai.lutuitui.com/api/api';
 
 /** mediaSource: 'media' 调 createMediaOrder，'selfMedia' 调 createSelfMediaOrder */
 function getOrderEndpoint(source: string): string {

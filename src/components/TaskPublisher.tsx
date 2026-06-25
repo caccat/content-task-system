@@ -77,7 +77,7 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
           title,
           content: body,
           mediaId,
-          mediaSource: mediaSource || 'media',
+          mediaSource: mediaSource || 'selfMedia', // 旧网站默认 selfMedia 保持向后兼容
           outOrderNo: article.id,
         }),
       });
