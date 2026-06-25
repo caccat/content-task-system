@@ -1,10 +1,7 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Modal, Input, Table, Tag, Space, message, Empty, Button, Progress } from 'antd';
-import { SearchOutlined, LinkOutlined, StopOutlined } from '@ant-design/icons';
+import { useState, useEffect, useCallback } from 'react';
+import { Modal, Input, Table, Tag, Space, message, Empty, Button } from 'antd';
+import { SearchOutlined, LinkOutlined } from '@ant-design/icons';
 import type { LutuituiMedia } from '../types';
-
-const BATCH_SIZE = 10; // 每批并发加载 10 页
-const MIN_MATCHES_BEFORE_STOP = 10; // 找到 10 个匹配后停止
 
 interface MediaSearchModalProps {
   open: boolean;
@@ -13,162 +10,54 @@ interface MediaSearchModalProps {
   initialKeyword?: string;
 }
 
-// 过滤函数
-function matchesKeyword(record: LutuituiMedia, kw: string): boolean {
-  return (
-    record.name.toLowerCase().includes(kw) ||
-    record.platformName.toLowerCase().includes(kw) ||
-    record.regionName.toLowerCase().includes(kw) ||
-    String(record.id).includes(kw)
-  );
-}
+const sourceColors: Record<string, string> = { media: 'purple', selfMedia: 'orange' };
+const sourceLabels: Record<string, string> = { media: '媒体', selfMedia: '自媒体' };
 
 export default function MediaSearchModal({ open, onClose, onSelect, initialKeyword = '' }: MediaSearchModalProps) {
   const [keyword, setKeyword] = useState('');
-  const [allRecords, setAllRecords] = useState<LutuituiMedia[]>([]);
+  const [records, setRecords] = useState<LutuituiMedia[]>([]);
   const [loading, setLoading] = useState(false);
-  const [autoLoading, setAutoLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalRecords, setTotalRecords] = useState(0);
   const [hasSearched, setHasSearched] = useState(false);
-  const [autoPagesLoaded, setAutoPagesLoaded] = useState(0);
-  const stopAutoRef = useRef(false);
-  const totalPagesRef = useRef(0);
 
   // 打开弹窗时重置
   useEffect(() => {
     if (open) {
       setKeyword(initialKeyword);
-      setAllRecords([]);
-      setCurrentPage(1);
-      totalPagesRef.current = 0;
-      setTotalRecords(0);
+      setRecords([]);
       setHasSearched(false);
-      setAutoLoading(false);
-      setAutoPagesLoaded(0);
-      stopAutoRef.current = false;
+      setLoading(false);
       if (initialKeyword) {
-        startSearch(initialKeyword);
+        doSearch(initialKeyword);
       }
     }
   }, [open, initialKeyword]);
 
-  const fetchPage = useCallback(async (page: number): Promise<{ records: LutuituiMedia[]; total: number; pages: number }> => {
-    const response = await fetch('/api/lutuitui-media-search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ current: page, size: 20 }),
-    });
-    const result = await response.json();
-    if (result.success) {
-      return {
-        records: result.data.records || [],
-        total: result.data.total || 0,
-        pages: result.data.pages || 0,
-      };
-    }
-    throw new Error(result.error || '加载失败');
-  }, []);
-
-  // 并发批量加载：每批 BATCH_SIZE 页，直到遍历全部或用户停止
-  const concurrentSearch = useCallback(async (startPage: number, searchKeyword: string) => {
-    setAutoLoading(true);
-    stopAutoRef.current = false;
-    const totalPages = totalPagesRef.current;
-    if (totalPages <= 0) { setAutoLoading(false); setLoading(false); return; }
-
-    let batchStart = startPage;
-    let foundEnough = false;
-
-    while (batchStart <= totalPages && !stopAutoRef.current && !foundEnough) {
-      const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, totalPages);
-      const pages: number[] = [];
-      for (let p = batchStart; p <= batchEnd; p++) pages.push(p);
-
-      try {
-        const results = await Promise.allSettled(pages.map(p => fetchPage(p)));
-
-        const newRecords: LutuituiMedia[] = [];
-        for (const r of results) {
-          if (r.status === 'fulfilled') {
-            newRecords.push(...r.value.records);
-          }
-        }
-
-        setAllRecords(prev => {
-          const existingIds = new Set(prev.map(r => r.id));
-          const deduped = newRecords.filter(r => !existingIds.has(r.id));
-          const merged = [...prev, ...deduped];
-
-          // 检查是否已有足够匹配
-          const kw = searchKeyword.toLowerCase();
-          if (merged.filter(r => matchesKeyword(r, kw)).length >= MIN_MATCHES_BEFORE_STOP) {
-            foundEnough = true;
-          }
-          return merged;
-        });
-
-        setCurrentPage(batchEnd);
-        setAutoPagesLoaded(batchEnd);
-      } catch {
-        // 单批失败不中断，继续下一批
-      }
-
-      batchStart = batchEnd + 1;
-    }
-
-    setAutoLoading(false);
-    setLoading(false);
-  }, [fetchPage]);
-
-  // 开始搜索
-  const startSearch = useCallback((kw?: string) => {
+  const doSearch = useCallback(async (kw?: string) => {
     const searchKeyword = (kw ?? keyword).trim();
     if (!searchKeyword) return;
 
     setLoading(true);
     setHasSearched(true);
-    setAllRecords([]);
-    setCurrentPage(1);
-    setTotalRecords(0);
-    setAutoPagesLoaded(0);
-    stopAutoRef.current = false;
+    setRecords([]);
 
-    fetchPage(1).then(data => {
-      if (stopAutoRef.current) { setLoading(false); return; }
-
-      totalPagesRef.current = data.pages;
-      setTotalRecords(data.total);
-      setAllRecords(data.records);
-      setCurrentPage(1);
-      setAutoPagesLoaded(1);
-
-      const kw = searchKeyword.toLowerCase();
-      const firstMatches = data.records.filter(r => matchesKeyword(r, kw));
-
-      if (firstMatches.length < MIN_MATCHES_BEFORE_STOP && data.pages > 1) {
-        concurrentSearch(2, searchKeyword);
+    try {
+      const response = await fetch('/api/lutuitui-media-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword: searchKeyword }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        setRecords(result.data.records || []);
       } else {
-        setLoading(false);
+        message.error(result.error || '搜索失败');
       }
-    }).catch(() => {
+    } catch {
       message.error('网络错误，请重试');
+    } finally {
       setLoading(false);
-    });
-  }, [keyword, fetchPage, concurrentSearch]);
-
-  const handleStopAuto = () => {
-    stopAutoRef.current = true;
-    setAutoLoading(false);
-    setLoading(false);
-  };
-
-  // 客户端过滤
-  const filteredRecords = useMemo(() => {
-    if (!keyword.trim()) return allRecords;
-    const kw = keyword.toLowerCase();
-    return allRecords.filter(r => matchesKeyword(r, kw));
-  }, [allRecords, keyword]);
+    }
+  }, [keyword]);
 
   const handleSelect = (media: LutuituiMedia) => {
     onSelect({
@@ -186,20 +75,30 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
       title: '媒体名称',
       dataIndex: 'name',
       key: 'name',
-      render: (text: string) => <strong>{text}</strong>,
+      width: 200,
+      render: (text: string, record: LutuituiMedia) => (
+        <Space>
+          <strong>{text}</strong>
+          {record.source && (
+            <Tag color={sourceColors[record.source]} style={{ fontSize: 11 }}>
+              {sourceLabels[record.source]}
+            </Tag>
+          )}
+        </Space>
+      ),
     },
     {
-      title: '平台',
+      title: '平台/门户',
       dataIndex: 'platformName',
       key: 'platformName',
-      width: 100,
+      width: 120,
       render: (text: string) => <Tag color="blue">{text}</Tag>,
     },
     {
       title: '地区',
       dataIndex: 'regionName',
       key: 'regionName',
-      width: 100,
+      width: 80,
       render: (text: string) => <Tag>{text}</Tag>,
     },
     {
@@ -228,13 +127,9 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
     },
   ];
 
-  const progressPercent = totalPagesRef.current > 0
-    ? Math.min(Math.round((autoPagesLoaded / totalPagesRef.current) * 100), 99)
-    : 0;
-
   return (
     <Modal
-      title="搜索并绑定鹿推推自媒体"
+      title="搜索并绑定鹿推推媒体"
       open={open}
       onCancel={onClose}
       width={750}
@@ -250,90 +145,46 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
             allowClear
             size="large"
             style={{ flex: 1 }}
-            onPressEnter={() => startSearch()}
+            onPressEnter={() => doSearch()}
           />
           <Button
-            type="default"
+            type="primary"
             size="large"
-            onClick={() => startSearch()}
-            loading={loading && !autoLoading}
-            disabled={autoLoading}
+            onClick={() => doSearch()}
+            loading={loading}
           >
             搜索
           </Button>
-          {autoLoading && (
-            <Button
-              type="default"
-              size="large"
-              danger
-              icon={<StopOutlined />}
-              onClick={handleStopAuto}
-            >
-              停止
-            </Button>
-          )}
         </div>
 
         {hasSearched && (
           <div style={{ color: '#999', fontSize: 12 }}>
-            共 {totalRecords.toLocaleString()} 个媒体，已加载 {allRecords.length.toLocaleString()} 条
-            {keyword && (
-              <span style={{ color: '#1890ff', marginLeft: 8 }}>
-                匹配 {filteredRecords.length} 条
-              </span>
-            )}
-            {autoLoading && (
-              <span style={{ marginLeft: 8, color: '#faad14' }}>
-                搜索中... {autoPagesLoaded}/{totalPagesRef.current} 页
+            {loading ? (
+              <span style={{ color: '#faad14' }}>正在搜索中，同时检索媒体库和自媒体库...</span>
+            ) : (
+              <span>
+                找到 <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{records.length}</span> 条匹配结果
               </span>
             )}
           </div>
         )}
 
-        {autoLoading && (
-          <Progress
-            percent={progressPercent}
-            status="active"
-            showInfo={false}
-            strokeColor="#1677ff"
-            size="small"
-          />
-        )}
-
         <Table
-          dataSource={filteredRecords}
+          dataSource={records}
           columns={columns}
-          rowKey="id"
-          loading={loading && !autoLoading}
+          rowKey={r => `${r.source || 'media'}-${r.id}`}
+          loading={loading}
           size="small"
           pagination={false}
           scroll={{ y: 360 }}
           locale={{
-            emptyText: autoLoading
-              ? <Empty description={`正在搜索中，已加载 ${allRecords.length.toLocaleString()} 条...`} />
+            emptyText: loading
+              ? <Empty description="正在搜索中..." />
               : hasSearched
                 ? <Empty description="未找到匹配的媒体，尝试其他关键词" />
-                : <Empty description="输入关键词搜索鹿推推自媒体" />
+                : <Empty description="输入关键词搜索鹿推推自媒体和媒体库" />
           }}
         />
-
-        {hasSearched && !autoLoading && currentPage < totalPagesRef.current && (
-          <div style={{ textAlign: 'center' }}>
-            <Button
-              type="dashed"
-              onClick={() => concurrentSearch(currentPage + 1, keyword)}
-              loading={autoLoading}
-            >
-              继续搜索更多（已搜索 {currentPage}/{totalPagesRef.current} 页）
-            </Button>
-          </div>
-        )}
-
-        {hasSearched && !autoLoading && currentPage >= totalPagesRef.current && filteredRecords.length === 0 && totalRecords > 0 && (
-          <div style={{ textAlign: 'center', color: '#999', fontSize: 12 }}>
-            已搜索全部 {totalRecords.toLocaleString()} 条数据，未找到匹配项
-          </div>
-        )}
       </Space>
     </Modal>
   );

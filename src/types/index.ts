@@ -49,6 +49,7 @@ export interface LutuituiMedia {
   industryName: string;
   costPrice: number;
   entryUrl: string | null;
+  source?: 'media' | 'selfMedia'; // 来源：媒体 / 自媒体
 }
 
 // 网站状态配置
