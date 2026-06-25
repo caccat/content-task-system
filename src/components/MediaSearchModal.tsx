@@ -1,7 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Modal, Input, Table, Tag, Space, message, Empty, Button } from 'antd';
-import { SearchOutlined, LinkOutlined } from '@ant-design/icons';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Modal, Input, Table, Tag, Space, message, Empty, Button, Progress } from 'antd';
+import { SearchOutlined, LinkOutlined, StopOutlined } from '@ant-design/icons';
 import type { LutuituiMedia } from '../types';
+
+const MAX_AUTO_PAGES = 125; // 125 页 × 20 条 = 2500 条，足够覆盖绝大多数搜索
+const MIN_MATCHES_BEFORE_STOP = 10; // 找到 10 个匹配后停止自动翻页
 
 interface MediaSearchModalProps {
   open: boolean;
@@ -14,10 +17,13 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
   const [keyword, setKeyword] = useState('');
   const [allRecords, setAllRecords] = useState<LutuituiMedia[]>([]);
   const [loading, setLoading] = useState(false);
+  const [autoLoading, setAutoLoading] = useState(false); // 是否在自动翻页
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
   const [totalRecords, setTotalRecords] = useState(0);
   const [hasSearched, setHasSearched] = useState(false);
+  const [autoPagesLoaded, setAutoPagesLoaded] = useState(0);
+  const stopAutoRef = useRef(false);
+  const totalPagesRef = useRef(0); // 用 ref 避免闭包陈旧问题
 
   // 打开弹窗时重置
   useEffect(() => {
@@ -25,45 +31,139 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
       setKeyword(initialKeyword);
       setAllRecords([]);
       setCurrentPage(1);
-      setTotalPages(0);
+      totalPagesRef.current = 0;
       setTotalRecords(0);
       setHasSearched(false);
+      setAutoLoading(false);
+      setAutoPagesLoaded(0);
+      stopAutoRef.current = false;
       // 如果有初始关键词，自动搜索
       if (initialKeyword) {
-        fetchPage(1);
+        startSearch(1, initialKeyword);
       }
     }
   }, [open, initialKeyword]);
 
-  const fetchPage = useCallback(async (page: number) => {
-    setLoading(true);
-    setHasSearched(true);
-    try {
-      const response = await fetch('/api/lutuitui-media-search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ current: page, size: 50 }),
-      });
-      const result = await response.json();
-      if (result.success) {
+  const fetchPage = useCallback(async (page: number): Promise<{ records: LutuituiMedia[]; total: number; pages: number }> => {
+    const response = await fetch('/api/lutuitui-media-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current: page, size: 20 }),
+    });
+    const result = await response.json();
+    if (result.success) {
+      return {
+        records: result.data.records || [],
+        total: result.data.total || 0,
+        pages: result.data.pages || 0,
+      };
+    }
+    throw new Error(result.error || '加载失败');
+  }, []);
+
+  // 自动翻页搜索：从 startPage 开始逐页加载，直到找到足够匹配或达到上限
+  const autoPaginateSearch = useCallback(async (startPage: number, searchKeyword: string) => {
+    setAutoLoading(true);
+    stopAutoRef.current = false;
+    let totalFound = 0;
+    let page = startPage;
+    const maxPage = Math.min(startPage + MAX_AUTO_PAGES - 1, totalPagesRef.current || 9999);
+
+    while (page <= maxPage && !stopAutoRef.current) {
+      try {
+        const data = await fetchPage(page);
+        totalPagesRef.current = data.pages;
+        setTotalRecords(data.total);
+
+        // 去重添加
         setAllRecords(prev => {
-          // 去重：替换已加载页面的数据
           const existingIds = new Set(prev.map(r => r.id));
-          const newRecords = result.data.records.filter((r: LutuituiMedia) => !existingIds.has(r.id));
+          const newRecords = data.records.filter((r: LutuituiMedia) => !existingIds.has(r.id));
           return [...prev, ...newRecords];
         });
         setCurrentPage(page);
-        setTotalPages(result.data.pages);
-        setTotalRecords(result.data.total);
-      } else {
-        message.error(result.error || '加载失败');
+        setAutoPagesLoaded(page - startPage + 1);
+
+        // 检查当前所有已加载的记录中有多少匹配
+        setAllRecords(prev => {
+          const kw = searchKeyword.toLowerCase();
+          const matches = prev.filter(r =>
+            r.name.toLowerCase().includes(kw) ||
+            r.platformName.toLowerCase().includes(kw) ||
+            r.regionName.toLowerCase().includes(kw) ||
+            String(r.id).includes(kw)
+          );
+          totalFound = matches.length;
+          return prev;
+        });
+
+        if (totalFound >= MIN_MATCHES_BEFORE_STOP) {
+          break;
+        }
+
+        page++;
+      } catch {
+        message.error('加载失败，已停止搜索');
+        break;
       }
-    } catch {
-      message.error('网络错误');
-    } finally {
-      setLoading(false);
     }
-  }, []);
+
+    setAutoLoading(false);
+    setLoading(false);
+  }, [fetchPage]);
+
+  // 开始搜索
+  const startSearch = useCallback((page: number, kw?: string) => {
+    const searchKeyword = kw ?? keyword;
+    if (!searchKeyword.trim()) return;
+
+    setLoading(true);
+    setHasSearched(true);
+    setAllRecords([]);
+    setCurrentPage(1);
+    totalPagesRef.current = 0;
+    setTotalRecords(0);
+    setAutoPagesLoaded(0);
+    stopAutoRef.current = false;
+
+    // 先加载第一页，然后自动翻页
+    fetchPage(page).then(data => {
+      if (stopAutoRef.current) {
+        setLoading(false);
+        return;
+      }
+      setAllRecords(data.records);
+      totalPagesRef.current = data.pages;
+      setTotalRecords(data.total);
+      setCurrentPage(page);
+      setAutoPagesLoaded(1);
+
+      // 检查第一页是否有足够匹配
+      const kw = searchKeyword.toLowerCase();
+      const firstPageMatches = data.records.filter((r: LutuituiMedia) =>
+        r.name.toLowerCase().includes(kw) ||
+        r.platformName.toLowerCase().includes(kw) ||
+        r.regionName.toLowerCase().includes(kw) ||
+        String(r.id).includes(kw)
+      );
+
+      if (firstPageMatches.length < MIN_MATCHES_BEFORE_STOP && data.pages > 1) {
+        // 继续自动翻页
+        autoPaginateSearch(page + 1, searchKeyword);
+      } else {
+        setLoading(false);
+      }
+    }).catch(() => {
+      message.error('网络错误');
+      setLoading(false);
+    });
+  }, [keyword, fetchPage, autoPaginateSearch]);
+
+  const handleStopAuto = () => {
+    stopAutoRef.current = true;
+    setAutoLoading(false);
+    setLoading(false);
+  };
 
   // 客户端过滤
   const filteredRecords = useMemo(() => {
@@ -153,71 +253,88 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
             allowClear
             size="large"
             style={{ flex: 1 }}
-            onPressEnter={() => {
-              if (allRecords.length === 0) fetchPage(1);
-            }}
+            onPressEnter={() => startSearch(1)}
           />
           <Button
             type="default"
             size="large"
-            onClick={() => fetchPage(1)}
-            loading={loading}
+            onClick={() => startSearch(1)}
+            loading={loading && !autoLoading}
+            disabled={autoLoading}
           >
             搜索
           </Button>
-        </div>
-
-        <div style={{ color: '#999', fontSize: 12 }}>
-          {hasSearched && !loading && (
-            <>
-              共 {totalRecords.toLocaleString()} 个媒体，已加载 {allRecords.length.toLocaleString()} 条
-              {keyword && filteredRecords.length !== allRecords.length && (
-                <span style={{ color: '#1890ff' }}>，匹配 {filteredRecords.length} 条</span>
-              )}
-            </>
+          {autoLoading && (
+            <Button
+              type="default"
+              size="large"
+              danger
+              icon={<StopOutlined />}
+              onClick={handleStopAuto}
+            >
+              停止
+            </Button>
           )}
         </div>
+
+        {hasSearched && (
+          <div style={{ color: '#999', fontSize: 12 }}>
+            共 {totalRecords.toLocaleString()} 个媒体，已加载 {allRecords.length.toLocaleString()} 条
+            {keyword && (
+              <span style={{ color: '#1890ff', marginLeft: 8 }}>
+                匹配 {filteredRecords.length} 条
+              </span>
+            )}
+            {autoLoading && (
+              <span style={{ marginLeft: 8, color: '#faad14' }}>
+                自动搜索中... (第 {currentPage} 页)
+              </span>
+            )}
+          </div>
+        )}
+
+        {autoLoading && (
+          <Progress
+            percent={Math.min(Math.round((autoPagesLoaded / MAX_AUTO_PAGES) * 100), 99)}
+            status="active"
+            showInfo={false}
+            strokeColor="#1677ff"
+            size="small"
+          />
+        )}
 
         <Table
           dataSource={filteredRecords}
           columns={columns}
           rowKey="id"
-          loading={loading}
+          loading={loading && !autoLoading}
           size="small"
           pagination={false}
           scroll={{ y: 360 }}
-          locale={{ emptyText: hasSearched ? <Empty description="未找到匹配的媒体，尝试其他关键词" /> : <Empty description="输入关键词搜索鹿推推自媒体" /> }}
+          locale={{
+            emptyText: autoLoading
+              ? <Empty description={`正在搜索中，已加载 ${allRecords.length} 条...`} />
+              : hasSearched
+                ? <Empty description="未找到匹配的媒体，尝试其他关键词" />
+                : <Empty description="输入关键词搜索鹿推推自媒体" />
+          }}
         />
 
-        {totalPages > 1 && filteredRecords.length === allRecords.length && !keyword && (
+        {hasSearched && !autoLoading && filteredRecords.length < MIN_MATCHES_BEFORE_STOP && currentPage < totalPagesRef.current && (
           <div style={{ textAlign: 'center' }}>
-            <Space>
-              <Button
-                disabled={currentPage <= 1}
-                onClick={() => fetchPage(currentPage - 1)}
-              >
-                上一页
-              </Button>
-              <span style={{ color: '#666' }}>
-                {currentPage} / {totalPages}
-              </span>
-              <Button
-                disabled={currentPage >= totalPages}
-                onClick={() => fetchPage(currentPage + 1)}
-              >
-                下一页
-              </Button>
-            </Space>
+            <Button
+              type="dashed"
+              onClick={() => autoPaginateSearch(currentPage + 1, keyword)}
+              loading={autoLoading}
+            >
+              加载更多数据（当前匹配 {filteredRecords.length} 条，可能更多）
+            </Button>
           </div>
         )}
 
-        {keyword && filteredRecords.length < allRecords.length && currentPage < totalPages && (
+        {hasSearched && !autoLoading && currentPage >= totalPagesRef.current && filteredRecords.length === 0 && totalRecords > 0 && (
           <div style={{ textAlign: 'center', color: '#999', fontSize: 12 }}>
-            本地过滤结果，加载更多数据可能找到更多匹配项
-            <br />
-            <Button type="link" size="small" onClick={() => fetchPage(currentPage + 1)}>
-              加载第 {currentPage + 1} 页数据
-            </Button>
+            已加载全部 {totalRecords.toLocaleString()} 条数据，未找到匹配项
           </div>
         )}
       </Space>
