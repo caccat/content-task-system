@@ -21,12 +21,13 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
     if (!html) return { title: fallback, body: '' };
     const div = document.createElement('div');
     div.innerHTML = html;
-    const heading = div.querySelector('h1, h2, h3');
+    // 只查找 h1 作为标题，h2/h3/h4...保留在正文中
+    const h1 = div.querySelector('h1');
     let title = fallback;
-    if (heading?.textContent) {
-      title = heading.textContent.trim().substring(0, 100);
-      // 从正文中移除标题元素
-      heading.remove();
+    if (h1?.textContent) {
+      title = h1.textContent.trim().substring(0, 100);
+      // 只移除 h1 标题，保留其他 heading
+      h1.remove();
     } else {
       const text = (div.textContent || '').trim();
       title = text.substring(0, 50) || fallback;
