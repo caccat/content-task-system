@@ -16,7 +16,7 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
   const { websites: managedWebsites, loading: websitesLoading } = useWebsites();
   const [publishingLutuitui, setPublishingLutuitui] = useState<string | null>(null);
 
-  // 提取标题：按第一行文本，管它什么标签。只移除 h1 避免正文重复。
+  // 提取标题：取第一行文本，然后从 DOM 里删掉那个容器元素。
   const extractTitleAndBody = (html: string, fallback: string): { title: string; body: string } => {
     if (!html) return { title: fallback, body: '' };
     const div = document.createElement('div');
@@ -26,9 +26,11 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
     const lines = (div.innerText || div.textContent || '').split('\n').map(l => l.trim()).filter(Boolean);
     const title = lines[0]?.substring(0, 100) || fallback;
 
-    // 如果有 h1，移除避免正文重复
-    const h1 = div.querySelector('h1');
-    if (h1) h1.remove();
+    // 找到包含标题文本的第一个顶层元素，移除以避免正文重复
+    const firstEl = div.firstElementChild;
+    if (firstEl && firstEl.textContent?.trim()) {
+      firstEl.remove();
+    }
 
     return { title, body: div.innerHTML };
   };
