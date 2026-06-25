@@ -2438,6 +2438,10 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                     value={filterWebsite}
                     onChange={setFilterWebsite}
                     allowClear
+                    showSearch
+                    filterOption={(input, option) =>
+                      (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+                    }
                     style={{ width: 180, borderRadius: 12 }}
                     bordered={false}
                     options={websites.map(w => ({ label: `${w.name} (${w.platform})`, value: w.id }))}

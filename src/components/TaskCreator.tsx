@@ -104,6 +104,10 @@ function CustomWebsiteSelect({
       placeholder={placeholder}
       style={{ width: '100%' }}
       loading={loading}
+      showSearch
+      filterOption={(input, option) =>
+        (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+      }
       tokenSeparators={[]}
       tagRender={(props) => {
         const { value: tagValue, closable, onClose } = props;
@@ -935,6 +939,10 @@ function DetailConfigPanel({
                         value={config.websiteId || undefined}
                         placeholder="选择网站"
                         style={{ width: 200 }}
+                        showSearch
+                        filterOption={(input, option) =>
+                          (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+                        }
                         onChange={(value) => updateConfig(type.id, idx, { websiteId: value })}
                       >
                         {managedWebsites.map(w => (
@@ -1042,6 +1050,10 @@ function ArticleEditModal({
           <Select
             placeholder="选择发布网站"
             allowClear
+            showSearch
+            filterOption={(input, option) =>
+              (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+            }
             options={managedWebsites.map(w => ({
               label: `${w.name} (${w.platform})`,
               value: w.id,
@@ -1774,6 +1786,10 @@ function CreatedTasksList() {
               <Select
                 mode="multiple"
                 placeholder="选择发布网站"
+                showSearch
+                filterOption={(input, option) =>
+                  (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+                }
                 options={[...DEFAULT_WEBSITES]}
               />
             </Form.Item>

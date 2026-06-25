@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Card, Table, Button, Input, InputNumber, Space, message, Popconfirm, Tag, Select } from 'antd';
+import { Card, Table, Button, Input, InputNumber, Space, message, Popconfirm, Tag, Select, Tooltip } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, SaveOutlined, CloseOutlined, SearchOutlined } from '@ant-design/icons';
 import { useWebsites } from '../hooks/useWebsites';
 import type { Website, WebsiteStatus, LutuituiMedia } from '../types';
@@ -261,9 +261,11 @@ export default function WebsiteManager() {
             <Space size={4}>
               {editingData.lutuitui_media_name ? (
                 <>
-                  <Tag color="purple" style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {editingData.lutuitui_media_name}
-                  </Tag>
+                  <Tooltip title={editingData.lutuitui_media_name}>
+                    <Tag color="purple" style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'default' }}>
+                      {editingData.lutuitui_media_name}
+                    </Tag>
+                  </Tooltip>
                   <Button size="small" type="link" danger onClick={() => clearMediaBinding('edit')}>解除</Button>
                 </>
               ) : (
@@ -279,9 +281,11 @@ export default function WebsiteManager() {
           );
         }
         return record.lutuitui_media_name ? (
-          <Tag color="purple" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {record.lutuitui_media_name}
-          </Tag>
+          <Tooltip title={record.lutuitui_media_name}>
+            <Tag color="purple" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'default' }}>
+              {record.lutuitui_media_name}
+            </Tag>
+          </Tooltip>
         ) : (
           <Tag color="default">未绑定</Tag>
         );
