@@ -106,17 +106,23 @@ async function searchAll(keyword: string, headers: Record<string, string>) {
     console.error('[mediaList搜索] 失败:', e.message);
   }
 
-  // 2. 再搜 selfMediaList（自媒体）—— 最多搜 200 页（4k条）避免超时
+  // 2. 再搜 selfMediaList（自媒体）—— 全部页，带超时保护
+  const DEADLINE = Date.now() + 50_000; // Vercel 60s 超时，留 10s buffer
   try {
     const first = await fetchSelfMediaPage(1, headers);
     allResults.push(...first.records.filter(r => matchesKeyword(r, kw)));
 
-    const maxSelfPages = Math.min(first.pages, 200);
-    for (let batchStart = 2; batchStart <= maxSelfPages; batchStart += CONCURRENCY) {
-      const batchPages: number[] = [];
-      for (let p = batchStart; p < Math.min(batchStart + CONCURRENCY, maxSelfPages + 1); p++) {
-        batchPages.push(p);
+    const totalSelfPages = first.pages;
+    for (let batchStart = 2; batchStart <= totalSelfPages; batchStart += CONCURRENCY) {
+      // 超时保护：剩余不到 5 秒就停止
+      if (Date.now() > DEADLINE - 5000) {
+        console.log(`[selfMediaList搜索] 接近超时，已搜到第 ${batchStart - 1}/${totalSelfPages} 页，提前结束`);
+        break;
       }
+      const batchEnd = Math.min(batchStart + CONCURRENCY - 1, totalSelfPages);
+      const batchPages: number[] = [];
+      for (let p = batchStart; p <= batchEnd; p++) batchPages.push(p);
+
       const results = await Promise.allSettled(
         batchPages.map(p => fetchSelfMediaPage(p, headers))
       );
