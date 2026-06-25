@@ -2,17 +2,68 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const API = 'https://ai.lutuitui.com/api/api';
 
-// 依次尝试不同参数名，看哪个生效（生效 = total 显著变小）
-async function tryParam(headers: Record<string, string>, paramName: string) {
-  const body: any = { page: 1, perPage: 5 };
-  body[paramName] = '中国教育在线';
+// 目标媒体特征（名称+价格）用于精确匹配
+const TARGETS = [
+  { name: '中国教育在线', price: 130 },
+  { name: '挖贝网', keyword: 'GEO排名可发' },
+  { name: '濮阳市广播电视台', keyword: '官方腾讯号' },
+  { name: '邢台网', keyword: '' },
+  { name: '博客园', keyword: 'GEO排名可发' },
+  { name: '中原融媒', keyword: 'GEO排名可发' },
+  { name: '商丘新闻网', keyword: 'GEO排名可发' },
+  { name: '指尖视界', keyword: '百家号' },
+];
+
+interface MediaRecord {
+  id: number; name: string; portalName?: string; channelTypeName?: string;
+  regionName?: string; costPrice?: number;
+}
+
+async function fetchMediaPage(headers: Record<string, string>, page: number) {
   const resp = await fetch(`${API}/media/mediaList`, {
     method: 'POST', headers,
-    body: JSON.stringify(body),
+    body: JSON.stringify({ page, perPage: 200 }),
   });
   const data = await resp.json();
-  const records = data?.content?.records || [];
-  return { paramName, total: data?.content?.total, firstRecord: records[0]?.name || '', count: records.length };
+  if (data.code !== '200') throw new Error(data.desc || '查询失败');
+  return {
+    records: (data.content.records || []).map((r: any): MediaRecord => ({
+      id: r.id, name: r.name,
+      portalName: r.portalName,
+      channelTypeName: r.channelTypeName,
+      regionName: r.regionName,
+      costPrice: r.costPrice,
+    })),
+    total: data.content.total,
+    pages: data.content.pages,
+  };
+}
+
+async function fetchSelfPage(headers: Record<string, string>, page: number) {
+  const resp = await fetch(`${API}/media/selfMediaList`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ current: page, size: 200 }),
+  });
+  const data = await resp.json();
+  if (data.code !== '200') throw new Error(data.desc || '查询失败');
+  return {
+    records: (data.content.records || []).map((r: any): MediaRecord => ({
+      id: r.id, name: r.name,
+      regionName: r.regionName,
+      costPrice: r.costPrice,
+    })),
+    total: data.content.total,
+    pages: data.content.pages,
+  };
+}
+
+function matchTarget(record: MediaRecord, target: typeof TARGETS[0]): boolean {
+  const rname = record.name || '';
+  const tname = target.name.toLowerCase();
+  if (!rname.toLowerCase().includes(tname)) return false;
+  if (target.keyword && !rname.includes(target.keyword)) return false;
+  if (target.price && record.costPrice !== target.price) return false;
+  return true;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -32,53 +83,64 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     'device-type': 'pc',
   };
 
-  // 先看无参数的总数
-  const baseResp = await fetch(`${API}/media/mediaList`, {
-    method: 'POST', headers,
-    body: JSON.stringify({ page: 1, perPage: 5 }),
-  });
-  const baseData = await baseResp.json();
-  const baseTotal = baseData?.content?.total || 0;
+  const result: any = {};
 
-  // 试各种参数名
-  const params = ['name', 'keyword', 'search', 'mediaName', 'title', 'q', 'filter', 'query', 'channelName', 'portalName'];
-  const results = [{ paramName: '(无参数)', total: baseTotal, firstRecord: baseData?.content?.records?.[0]?.name || '' }];
+  try {
+    // 1. 搜 mediaList - 只搜前面几页，同时采样中间页看ID范围
+    const first = await fetchMediaPage(headers, 1);
+    const info = {
+      total: first.total,
+      pages: first.pages,
+      page1_first: first.records[0]?.name,
+      page1_last: first.records[first.records.length - 1]?.name,
+      page1_minId: first.records[0]?.id,
+      page1_maxId: first.records[first.records.length - 1]?.id,
+    };
 
-  for (const p of params) {
-    try {
-      results.push(await tryParam(headers, p));
-    } catch (e: any) {
-      results.push({ paramName: p, total: -1, firstRecord: e.message });
+    // 采样中间几页
+    const midPage = Math.floor(first.pages / 2);
+    const mid = await fetchMediaPage(headers, midPage);
+    const lastPage = await fetchMediaPage(headers, first.pages);
+
+    result.mediaList = {
+      info,
+      midPage: { page: midPage, first_name: mid.records[0]?.name, first_id: mid.records[0]?.id },
+      lastPage: { page: first.pages, first_name: lastPage.records[0]?.name, first_id: lastPage.records[0]?.id },
+    };
+
+    // 搜前5页找目标
+    const found: any = {};
+    for (let p = 1; p <= 5; p++) {
+      const { records } = p === 1 ? { records: first.records } : await fetchMediaPage(headers, p);
+      for (const rec of records) {
+        for (const t of TARGETS) {
+          if (matchTarget(rec, t)) {
+            found[t.name] = { id: rec.id, name: rec.name, portal: rec.portalName, channel: rec.channelTypeName, region: rec.regionName, price: rec.costPrice, page: p };
+          }
+        }
+      }
     }
-  }
+    result.foundInMedia = found;
+    result.remainingTargets = TARGETS.filter(t => !found[t.name]).map(t => t.name);
 
-  // 再搜 selfMedia
-  const selfBase = await fetch(`${API}/media/selfMediaList`, {
-    method: 'POST', headers,
-    body: JSON.stringify({ current: 1, size: 5 }),
-  });
-  const selfData = await selfBase.json();
-  const selfResults = [{ paramName: '(无参数)', total: selfData?.content?.total || 0 }];
-  for (const p of params) {
-    try {
-      const body: any = { current: 1, size: 5 };
-      body[p] = '中国教育在线';
-      const resp = await fetch(`${API}/media/selfMediaList`, {
-        method: 'POST', headers,
-        body: JSON.stringify(body),
-      });
-      const data = await resp.json();
-      selfResults.push({ paramName: p, total: data?.content?.total || 0 });
-    } catch (e: any) {
-      selfResults.push({ paramName: p, total: -1, firstRecord: e.message });
+    // 2. 搜 selfMediaList - 前10页
+    const selfFirst = await fetchSelfPage(headers, 1);
+    const selfFound: any = {};
+    for (let p = 1; p <= 10; p++) {
+      const { records } = p === 1 ? { records: selfFirst.records } : await fetchSelfPage(headers, p);
+      for (const rec of records) {
+        for (const t of TARGETS) {
+          if (matchTarget(rec, t)) {
+            selfFound[t.name] = { id: rec.id, name: rec.name, region: rec.regionName, price: rec.costPrice, page: p };
+          }
+        }
+      }
     }
-  }
+    result.foundInSelf = selfFound;
+    result.selfInfo = { total: selfFirst.total, pages: selfFirst.pages };
 
-  return res.status(200).json({
-    success: true,
-    baseTotal,
-    baseTotalSelf: selfData?.content?.total || 0,
-    mediaList: results,
-    selfMediaList: selfResults,
-  });
+    return res.status(200).json({ success: true, ...result });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
 }
