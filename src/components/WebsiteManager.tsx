@@ -170,10 +170,11 @@ export default function WebsiteManager() {
   };
 
   // 选中媒体后的回调
-  const onMediaSelect = (media: Pick<LutuituiMedia, 'id' | 'name' | 'platformName' | 'regionName' | 'costPrice'>) => {
+  const onMediaSelect = (media: Pick<LutuituiMedia, 'id' | 'name' | 'platformName' | 'regionName' | 'costPrice' | 'source'>) => {
     const update: Partial<Website> = {
       lutuitui_media_id: media.id,
       lutuitui_media_name: `${media.name} (${media.platformName}·${media.regionName}·¥${media.costPrice})`,
+      lutuitui_media_source: media.source || null,
     };
     if (mediaModalTarget === 'edit') {
       setEditingData(prev => ({ ...prev, ...update }));

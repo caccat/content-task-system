@@ -1,7 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// 鹿推推 API 配置
-const LUTUITUI_PRODUCTION = 'https://ai.lutuitui.com/api/api';
+// 鹿推推 API 配置（文档：https://ai.lutuitui.com/api）
+const LUTUITUI_PRODUCTION = 'https://ai.lutuitui.com/api';
+
+/** mediaSource: 'media' 调 createMediaOrder，'selfMedia' 调 createSelfMediaOrder */
+function getOrderEndpoint(source: string): string {
+  return source === 'media'
+    ? `${LUTUITUI_PRODUCTION}/order/createMediaOrder`
+    : `${LUTUITUI_PRODUCTION}/order/createSelfMediaOrder`;
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS
@@ -18,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { title, content, mediaId, outOrderNo } = req.body || {};
+    const { title, content, mediaId, outOrderNo, mediaSource } = req.body || {};
 
     if (!title || !content) {
       return res.status(400).json({ error: '缺少必填参数: title, content' });
@@ -38,16 +45,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: '未配置 mediaId，请在请求中传入或设置环境变量 LUTUITUI_MEDIA_ID' });
     }
 
+    const endpoint = getOrderEndpoint(mediaSource || 'media');
     const timestamp = Math.floor(Date.now() / 1000);
 
     console.log('[鹿推推] 正在创建订单...', {
+      endpoint,
       title: title.substring(0, 30),
       mediaId: finalMediaId,
+      mediaSource: mediaSource || 'media',
       outOrderNo,
       contentLength: content.length,
     });
 
-    const response = await fetch(`${LUTUITUI_PRODUCTION}/order/createSelfMediaOrder`, {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

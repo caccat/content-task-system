@@ -36,6 +36,7 @@ export interface Website {
   status_updated_at: string;
   lutuitui_media_id?: number | null;
   lutuitui_media_name?: string | null;
+  lutuitui_media_source?: string | null; // 'media' | 'selfMedia' — 决定下单接口
 }
 
 // 鹿推推自媒体（从API返回的原始数据）

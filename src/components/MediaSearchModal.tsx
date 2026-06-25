@@ -6,7 +6,7 @@ import type { LutuituiMedia } from '../types';
 interface MediaSearchModalProps {
   open: boolean;
   onClose: () => void;
-  onSelect: (media: Pick<LutuituiMedia, 'id' | 'name' | 'platformName' | 'regionName' | 'costPrice'>) => void;
+  onSelect: (media: Pick<LutuituiMedia, 'id' | 'name' | 'platformName' | 'regionName' | 'costPrice' | 'source'>) => void;
   initialKeyword?: string;
 }
 
@@ -86,6 +86,7 @@ export default function MediaSearchModal({ open, onClose, onSelect, initialKeywo
       platformName: media.platformName,
       regionName: media.regionName,
       costPrice: media.costPrice,
+      source: media.source,
     });
     onClose();
   };

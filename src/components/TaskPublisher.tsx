@@ -36,20 +36,21 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
   };
 
   // 根据文章的 website 字段查找鹿推推 mediaId
-  const getLutuituiMediaInfo = (article: Article): { mediaId: number | null; mediaName: string | null; disabled: boolean; reason: string } => {
+  const getLutuituiMediaInfo = (article: Article): { mediaId: number | null; mediaName: string | null; mediaSource: string | null; disabled: boolean; reason: string } => {
     if (!article.website) {
-      return { mediaId: null, mediaName: null, disabled: true, reason: '文章未关联发布网站' };
+      return { mediaId: null, mediaName: null, mediaSource: null, disabled: true, reason: '文章未关联发布网站' };
     }
     const website = managedWebsites.find(w => w.id === article.website);
     if (!website) {
-      return { mediaId: null, mediaName: null, disabled: true, reason: '未找到对应网站' };
+      return { mediaId: null, mediaName: null, mediaSource: null, disabled: true, reason: '未找到对应网站' };
     }
     if (!website.lutuitui_media_id) {
-      return { mediaId: null, mediaName: null, disabled: true, reason: `网站"${website.name}"未绑定鹿推推` };
+      return { mediaId: null, mediaName: null, mediaSource: null, disabled: true, reason: `网站"${website.name}"未绑定鹿推推` };
     }
     return {
       mediaId: website.lutuitui_media_id,
       mediaName: website.lutuitui_media_name || String(website.lutuitui_media_id),
+      mediaSource: website.lutuitui_media_source || null,
       disabled: false,
       reason: '',
     };
@@ -57,7 +58,7 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
 
   // 发布文章到鹿推推
   const publishToLutuitui = async (article: Article) => {
-    const { mediaId, disabled, reason } = getLutuituiMediaInfo(article);
+    const { mediaId, mediaSource, disabled, reason } = getLutuituiMediaInfo(article);
     if (disabled) {
       message.warning(reason);
       return;
@@ -74,8 +75,9 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title,
-          content: body, // 去掉标题后的正文
+          content: body,
           mediaId,
+          mediaSource: mediaSource || 'media',
           outOrderNo: article.id,
         }),
       });

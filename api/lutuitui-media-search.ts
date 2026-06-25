@@ -1,8 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const LUTUITUI_PRODUCTION = 'https://ai.lutuitui.com/api/api';
-const MEDIA_PER_PAGE = 200; // mediaList 每页最大
-const CONCURRENCY = 20; // 并发数
+// 鹿推推 API 地址
+// channel 系列接口（支持 keyword 搜索）：https://ai.lutuitui.com/api
+// mediaList/selfMediaList（不支持 keyword，但返回价格）：https://ai.lutuitui.com/api/api
+const LUTUITUI_API = 'https://ai.lutuitui.com/api/api';
+const LUTUITUI_CHANNEL = 'https://ai.lutuitui.com/api';
 
 interface MediaItem {
   id: number;
@@ -24,131 +26,124 @@ function makeHeaders(appId: string, apiKey: string) {
   };
 }
 
-async function fetchMediaPage(page: number, headers: Record<string, string>, keyword = '') {
-  const body: any = { page, perPage: MEDIA_PER_PAGE };
-  if (keyword) body.keyword = keyword;
-  const resp = await fetch(`${LUTUITUI_PRODUCTION}/media/mediaList`, {
+/**
+ * 使用 channel 接口搜索（支持 keyword，用于有搜索词的场景）
+ * 注意：channel 接口不返回 costPrice
+ */
+async function searchChannel(
+  endpoint: '/channel/media' | '/channel/self-media',
+  source: 'media' | 'selfMedia',
+  params: { page: number; size: number; keyword: string },
+  headers: Record<string, string>,
+) {
+  const resp = await fetch(`${LUTUITUI_CHANNEL}${endpoint}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(params),
+  });
+  const data = await resp.json();
+  if (data.code !== '200') throw new Error(data.desc || '查询失败');
+  const rawRecords = data.content?.records || [];
+  return {
+    records: rawRecords.map((r: any): MediaItem => ({
+      id: r.id,
+      name: r.name,
+      source,
+      platformName: r.platformName || r.portalName || '',
+      regionName: r.regionName || '',
+      costPrice: r.costPrice ?? undefined,
+    })),
+    total: data.content?.total || 0,
+    pages: data.content?.pages || 0,
+  };
+}
+
+/**
+ * 使用 mediaList/selfMediaList 接口（不支持 keyword，但返回 costPrice，用于无搜索词的浏览模式）
+ */
+async function fetchListPage(
+  endpoint: '/media/mediaList' | '/media/selfMediaList',
+  source: 'media' | 'selfMedia',
+  page: number,
+  headers: Record<string, string>,
+) {
+  const isMedia = endpoint === '/media/mediaList';
+  const body = isMedia
+    ? { page, perPage: 200 }
+    : { current: page, size: 200 };
+  const resp = await fetch(`${LUTUITUI_API}${endpoint}`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
   });
   const data = await resp.json();
   if (data.code !== '200') throw new Error(data.desc || '查询失败');
-  // DEBUG: 打印原始记录的所有字段名
-  const rawRecords = data.content.records || [];
-  if (rawRecords.length > 0) {
-    console.log('[DEBUG mediaList] 第一条原始字段:', JSON.stringify(rawRecords[0], null, 2));
-  }
+  const rawRecords = data.content?.records || [];
   return {
     records: rawRecords.map((r: any): MediaItem => ({
       id: r.id,
       name: r.name,
-      source: 'media' as const,
-      platformName: r.portalName || r.channelTypeName || '',
+      source,
+      platformName: r.platformName || r.portalName || '',
       regionName: r.regionName || '',
       costPrice: r.costPrice ?? undefined,
     })),
-    total: data.content.total || 0,
-    pages: data.content.pages || 0,
-    _rawKeys: rawRecords.length > 0 ? Object.keys(rawRecords[0]) : [],
+    total: data.content?.total || 0,
+    pages: data.content?.pages || 0,
+    perPage: isMedia ? 200 : 200,
   };
 }
 
-async function fetchSelfMediaPage(page: number, headers: Record<string, string>, keyword = '') {
-  const body: any = { current: page, size: 20 };
-  if (keyword) body.keyword = keyword;
-  const resp = await fetch(`${LUTUITUI_PRODUCTION}/media/selfMediaList`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
-  const data = await resp.json();
-  if (data.code !== '200') throw new Error(data.desc || '查询失败');
-  // DEBUG: 打印原始记录的所有字段名
-  const rawRecords = data.content.records || [];
-  if (rawRecords.length > 0) {
-    console.log('[DEBUG selfMediaList] 第一条原始字段:', JSON.stringify(rawRecords[0], null, 2));
+/**
+ * 搜索 —— 按关键词搜索（每页最多20条），支持多页
+ */
+async function doSearch(
+  endpoint: '/channel/media' | '/channel/self-media',
+  source: 'media' | 'selfMedia',
+  keyword: string,
+  headers: Record<string, string>,
+  current: number,
+  size: number,
+) {
+  const kw = keyword.trim();
+  console.log(`[鹿推推搜索] 关键词: "${kw}", 来源: ${source}, page=${current}, size=${size}`);
+
+  const result = await searchChannel(endpoint, source, { page: current, size, keyword: kw }, headers);
+
+  const totalPages = result.pages || 1;
+  // 如果当前请求的页数超出结果，从请求第1页兜底
+  let records = result.records;
+  let page = result.pages > 0 ? current : 1;
+
+  if (current > totalPages && records.length === 0) {
+    const fallback = await searchChannel(endpoint, source, { page: 1, size, keyword: kw }, headers);
+    records = fallback.records;
+    page = 1;
   }
+
   return {
-    records: rawRecords.map((r: any): MediaItem => ({
-      id: r.id,
-      name: r.name,
-      source: 'selfMedia' as const,
-      platformName: r.platformName || '',
-      regionName: r.regionName || '',
-      costPrice: r.costPrice ?? undefined,
-    })),
-    total: data.content.total || 0,
-    pages: data.content.pages || 0,
+    records,
+    total: result.total,
+    page,
+    totalPages,
   };
 }
 
-// 兜底：万一 API 不支持 name 参数，客户端过滤
-function matches(item: MediaItem, kw: string) {
-  const s = `${item.name} ${item.platformName} ${item.regionName}`.toLowerCase();
-  return s.includes(kw);
-}
-
-// 搜媒体库 —— 传 keyword 给鹿推推 API，如果API不支持则兜底搜前200页
-async function searchMediaList(keyword: string, headers: Record<string, string>) {
-  const kw = keyword.toLowerCase();
-  const results: MediaItem[] = [];
-  const first = await fetchMediaPage(1, headers, keyword);
-  const apiFilterWorks = first.total <= 500;
-  const useClientFilter = !apiFilterWorks;
-  results.push(...(useClientFilter ? first.records.filter(r => matches(r, kw)) : first.records));
-
-  const totalPages = apiFilterWorks ? first.pages : Math.min(first.pages, 200);
-  console.log(`[mediaList] apiFilterWorks=${apiFilterWorks}, totalPages=${totalPages}, first.pages=${first.pages}`);
-
-  for (let batchStart = 2; batchStart <= totalPages; batchStart += CONCURRENCY) {
-    const batchEnd = Math.min(batchStart + CONCURRENCY - 1, totalPages);
-    const batchPages = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
-    const settled = await Promise.allSettled(
-      batchPages.map(p => fetchMediaPage(p, headers, keyword))
-    );
-    for (const r of settled) {
-      if (r.status === 'fulfilled') {
-        const recs = useClientFilter ? r.value.records.filter(x => matches(x, kw)) : r.value.records;
-        results.push(...recs);
-      }
-    }
-  }
-  return results;
-}
-
-// 搜自媒体库 —— 传 keyword 给鹿推推 API，兜底只搜20页避免超时
-async function searchSelfMediaList(keyword: string, headers: Record<string, string>) {
-  const kw = keyword.toLowerCase();
-  const results: MediaItem[] = [];
-  const DEADLINE = Date.now() + 50_000;
-
-  const first = await fetchSelfMediaPage(1, headers, keyword);
-  const apiFilterWorks = first.total <= 500;
-  const useClientFilter = !apiFilterWorks;
-  results.push(...(useClientFilter ? first.records.filter(r => matches(r, kw)) : first.records));
-
-  const totalPages = apiFilterWorks ? first.pages : Math.min(first.pages, 20);
-  console.log(`[selfMediaList] apiFilterWorks=${apiFilterWorks}, totalPages=${totalPages}, first.pages=${first.pages}`);
-
-  for (let batchStart = 2; batchStart <= totalPages; batchStart += CONCURRENCY) {
-    if (Date.now() > DEADLINE - 5000) {
-      console.log(`[selfMediaList] 接近超时，已搜到第 ${batchStart - 1}/${totalPages} 页`);
-      break;
-    }
-    const batchEnd = Math.min(batchStart + CONCURRENCY - 1, totalPages);
-    const batchPages = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
-    const settled = await Promise.allSettled(
-      batchPages.map(p => fetchSelfMediaPage(p, headers, keyword))
-    );
-    for (const r of settled) {
-      if (r.status === 'fulfilled') {
-        const recs = useClientFilter ? r.value.records.filter(x => matches(x, kw)) : r.value.records;
-        results.push(...recs);
-      }
-    }
-  }
-  return results;
+/**
+ * 并发搜索两个库
+ */
+async function doSearchBoth(keyword: string, headers: Record<string, string>, current: number, size: number) {
+  const [media, self] = await Promise.allSettled([
+    searchChannel('/channel/media', 'media', { page: current, size: Math.ceil(size / 2), keyword: keyword.trim() }, headers),
+    searchChannel('/channel/self-media', 'selfMedia', { page: current, size: Math.ceil(size / 2), keyword: keyword.trim() }, headers),
+  ]);
+  const records: MediaItem[] = [
+    ...(media.status === 'fulfilled' ? media.value.records : []),
+    ...(self.status === 'fulfilled' ? self.value.records : []),
+  ];
+  const total = (media.status === 'fulfilled' ? media.value.total : 0)
+    + (self.status === 'fulfilled' ? self.value.total : 0);
+  return { records, total, page: current, totalPages: 1 };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -170,53 +165,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const headers = makeHeaders(appId, apiKey);
 
-    // 有关键词 → 服务端全量搜索
+    // 有关键词 → channel API 搜索
     if (keyword && keyword.trim()) {
-      console.log(`[鹿推推搜索] 关键词: "${keyword.trim()}", 来源: ${source}`);
-      let results: MediaItem[];
+      let result: { records: MediaItem[]; total: number; page: number; totalPages: number };
 
       if (source === 'selfMedia') {
-        results = await searchSelfMediaList(keyword.trim(), headers);
+        result = await doSearch('/channel/self-media', 'selfMedia', keyword.trim(), headers, current, size);
       } else if (source === 'all') {
-        // 并发搜两个库
-        const [mediaResults, selfResults] = await Promise.allSettled([
-          searchMediaList(keyword.trim(), headers),
-          searchSelfMediaList(keyword.trim(), headers),
-        ]);
-        results = [
-          ...(mediaResults.status === 'fulfilled' ? mediaResults.value : []),
-          ...(selfResults.status === 'fulfilled' ? selfResults.value : []),
-        ];
+        result = await doSearchBoth(keyword.trim(), headers, current, size);
       } else {
-        // 默认搜媒体库
-        results = await searchMediaList(keyword.trim(), headers);
+        result = await doSearch('/channel/media', 'media', keyword.trim(), headers, current, size);
       }
 
-      console.log(`[鹿推推搜索] 找到 ${results.length} 条匹配`);
+      console.log(`[鹿推推搜索] 找到 ${result.records.length} 条 / 共 ${result.total}`);
 
       return res.status(200).json({
         success: true,
         data: {
-          records: results,
-          total: results.length,
-          current: 1,
-          pages: 1,
+          records: result.records,
+          total: result.total,
+          current: result.page,
+          pages: result.totalPages,
           isSearchResult: true,
         },
       });
     }
 
-    // 无关键词 → 简单分页
-    const data = source === 'selfMedia'
-      ? await fetchSelfMediaPage(current, headers)
-      : await fetchMediaPage(current, headers);
+    // 无关键词 → 浏览模式，使用 mediaList/selfMediaList（返回价格）
+    const listResult = source === 'selfMedia'
+      ? await fetchListPage('/media/selfMediaList', 'selfMedia', current, headers)
+      : await fetchListPage('/media/mediaList', 'media', current, headers);
+
     return res.status(200).json({
       success: true,
       data: {
-        records: data.records,
-        total: data.total,
+        records: listResult.records,
+        total: listResult.total,
         current,
-        pages: data.pages,
+        pages: listResult.pages,
         isSearchResult: false,
       },
     });
