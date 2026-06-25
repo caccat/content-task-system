@@ -19,7 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     'device-type': 'pc',
   };
 
-  async function fetchMediaPage(page: number) {
+  async function fetchPage(page: number) {
     const resp = await fetch(`${API}/media/mediaList`, {
       method: 'POST', headers,
       body: JSON.stringify({ page, perPage: 200 }),
@@ -30,47 +30,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }));
   }
 
-  async function fetchSelfPage(page: number) {
-    const resp = await fetch(`${API}/media/selfMediaList`, {
-      method: 'POST', headers,
-      body: JSON.stringify({ current: page, size: 200 }),
-    });
-    const data = await resp.json();
-    return (data.content?.records || []).map((r: any) => ({
-      id: r.id, name: r.name, region: r.regionName || '', price: r.costPrice,
-    }));
-  }
-
   const foundMedia: any[] = [];
-  const foundSelf: any[] = [];
+  const foundRongmei: any[] = [];
 
-  // 搜 mediaList 61-200 页
-  for (let batch = 61; batch <= 200; batch += 20) {
+  // 搜 mediaList 第1-263页，找"融媒"
+  for (let batch = 1; batch <= 260; batch += 20) {
     const pages = Array.from({ length: 20 }, (_, i) => batch + i).filter(p => p <= 263);
-    const settled = await Promise.allSettled(pages.map(p => fetchMediaPage(p)));
+    const settled = await Promise.allSettled(pages.map(p => fetchPage(p)));
     for (const r of settled) {
       if (r.status === 'fulfilled') {
         for (const rec of r.value) {
-          if (rec.name.includes('中原')) foundMedia.push(rec);
+          if (rec.name.includes('中原融媒')) foundMedia.push(rec);
+          if (rec.name.includes('融媒')) foundRongmei.push({ id: rec.id, name: rec.name, price: rec.price });
         }
       }
     }
-    if (foundMedia.length > 0) break;
   }
 
-  // 搜 selfMediaList 1-20 页
-  for (let batch = 1; batch <= 20; batch += 10) {
-    const pages = Array.from({ length: 10 }, (_, i) => batch + i).filter(p => p <= 372);
-    const settled = await Promise.allSettled(pages.map(p => fetchSelfPage(p)));
-    for (const r of settled) {
-      if (r.status === 'fulfilled') {
-        for (const rec of r.value) {
-          if (rec.name.includes('中原')) foundSelf.push(rec);
-        }
-      }
-    }
-    if (foundSelf.length > 0) break;
-  }
-
-  return res.status(200).json({ success: true, foundMedia, foundSelf });
+  return res.status(200).json({ 
+    success: true, 
+    foundZhongyuan: foundMedia, 
+    allRongmei: foundRongmei.slice(0, 30),
+    rongmeiCount: foundRongmei.length,
+  });
 }
