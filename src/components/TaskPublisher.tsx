@@ -16,23 +16,18 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
   const { websites: managedWebsites, loading: websitesLoading } = useWebsites();
   const [publishingLutuitui, setPublishingLutuitui] = useState<string | null>(null);
 
-  // 提取标题：取第一行文本，然后从 DOM 里删掉那个容器元素。
+  // 提取标题：取第一行非空文本作为标题，保留完整正文
   const extractTitleAndBody = (html: string, fallback: string): { title: string; body: string } => {
     if (!html) return { title: fallback, body: '' };
     const div = document.createElement('div');
     div.innerHTML = html;
 
-    // 按换行取第一行非空文本作为标题（innerText 返回纯文本，无 HTML 标签）
+    // 按换行取第一行非空文本作为标题
     const lines = (div.innerText || div.textContent || '').split('\n').map(l => l.trim()).filter(Boolean);
     const title = lines[0]?.substring(0, 100) || fallback;
 
-    // 找到包含标题文本的第一个顶层元素，移除以避免正文重复
-    const firstEl = div.firstElementChild;
-    if (firstEl && firstEl.textContent?.trim()) {
-      firstEl.remove();
-    }
-
-    return { title, body: div.innerHTML };
+    // 保留完整 HTML 正文（不删除任何元素）
+    return { title, body: html };
   };
 
   // 根据文章的 website 字段查找鹿推推 mediaId
