@@ -605,7 +605,7 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
     try {
       await updateArticle(editingArticle.id, {
         content,
-        status: editingArticle.status,
+        status: content.trim() ? 'ready' : 'draft',
       });
       // 清除自动保存的草稿
       clearArticleDraft(editingArticle.id);
