@@ -16,28 +16,36 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
   const { websites: managedWebsites, loading: websitesLoading } = useWebsites();
   const [publishingLutuitui, setPublishingLutuitui] = useState<string | null>(null);
 
-  // 提取标题：取第一行文本作为标题，从正文中移除包含该文本的标题元素避免重复
+  // 提取标题：优先取第一个 h1/h2/h3 元素作为标题，移除它避免正文重复
   const extractTitleAndBody = (html: string, fallback: string): { title: string; body: string } => {
     if (!html) return { title: fallback, body: '' };
     const div = document.createElement('div');
     div.innerHTML = html;
 
-    // 按换行取第一行非空文本作为标题（innerText 返回纯文本，无 HTML 标签）
-    const lines = (div.innerText || div.textContent || '').split('\n').map(l => l.trim()).filter(Boolean);
-    const title = lines[0]?.substring(0, 100) || fallback;
-
-    // 找到直接以标题文本开头的顶层元素（如 h1/h2/p），只移除它
-    // 避免误删包裹整篇文章的根 div（Quill 常把内容包在 <div data-zone-id> 里）
-    for (const child of Array.from(div.children)) {
-      const el = child as HTMLElement;
-      const text = (el.innerText || '').trim();
-      if (text && (text === title || text.startsWith(title))) {
-        child.remove();
+    // 优先取 h1/h2/h3 作为标题（Quill 编辑器生成的文章通常用 h1 作为标题）
+    let title = '';
+    for (const tag of ['h1', 'h2', 'h3'] as const) {
+      const heading = div.querySelector(tag);
+      if (heading && heading.textContent?.trim()) {
+        title = heading.textContent.trim().substring(0, 100);
+        heading.remove(); // 移除标题元素避免正文重复
         break;
       }
     }
 
-    return { title, body: div.innerHTML };
+    // 没有标题标签时回退到第一行文本
+    if (!title) {
+      const lines = (div.innerText || '').split('\n').map(l => l.trim()).filter(Boolean);
+      title = lines[0]?.substring(0, 100) || fallback;
+      // 尝试删除包含该文本的第一个子元素
+      for (const child of Array.from(div.children)) {
+        const el = child as HTMLElement;
+        const text = (el.innerText || '').trim();
+        if (text === title || text.startsWith(title)) { child.remove(); break; }
+      }
+    }
+
+    return { title: title || fallback, body: div.innerHTML };
   };
 
   // 根据文章的 website 字段查找鹿推推 mediaId
