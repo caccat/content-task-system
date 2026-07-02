@@ -970,6 +970,23 @@ function ManualGenerateSection({
       render: (deadline: string) => dayjs(deadline).format('YYYY-MM-DD'),
     },
     {
+      title: '备注',
+      dataIndex: 'writing_suggestions',
+      key: 'writing_suggestions',
+      width: 160,
+      render: (writing_suggestions: string | null) => {
+        if (!writing_suggestions) return <Text type="secondary" style={{ fontSize: 12 }}>-</Text>;
+        const short = writing_suggestions.length > 15 ? writing_suggestions.slice(0, 15) + '...' : writing_suggestions;
+        return (
+          <Tooltip title={writing_suggestions}>
+            <Tag color="orange" style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer' }}>
+              📝 {short}
+            </Tag>
+          </Tooltip>
+        );
+      },
+    },
+    {
       title: '状态',
       key: 'status',
       width: 120,
@@ -1203,9 +1220,11 @@ function AiGenerateSection({
           截止：{dayjs(task.deadline).format('YYYY-MM-DD')}
         </Text>
         {task.writing_suggestions && (
-          <Text type="secondary" ellipsis>
-            写作建议：{task.writing_suggestions}
-          </Text>
+          <Tooltip title={task.writing_suggestions}>
+            <Tag color="orange" style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer', marginTop: 4 }}>
+              📝 {task.writing_suggestions}
+            </Tag>
+          </Tooltip>
         )}
         {task.ai_status === 'generating' && (
           <Progress percent={50} size="small" status="active" />
@@ -1619,6 +1638,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
   const [filterCity, setFilterCity] = useState<string | undefined>(undefined);
   const [filterPromptType, setFilterPromptType] = useState<string | undefined>(undefined);
   const [filterWebsite, setFilterWebsite] = useState<string | undefined>(undefined);
+  const [filterHasNote, setFilterHasNote] = useState<string | undefined>(undefined); // 备注筛选：has_note / no_note
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs>(dayjs());
 
   // 日期变化时通知父组件（用于侧边栏统计联动）
@@ -1701,9 +1721,12 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
       if (filterCity && task.city !== filterCity) return false;
       if (filterPromptType && task.prompt_type !== filterPromptType) return false;
       if (filterWebsite && (!task.websites || !task.websites.includes(filterWebsite))) return false;
+      // 备注筛选
+      if (filterHasNote === 'has_note' && !task.writing_suggestions) return false;
+      if (filterHasNote === 'no_note' && task.writing_suggestions) return false;
       return true;
     });
-  }, [tasks, filterCity, filterPromptType, filterWebsite, selectedDate]);
+  }, [tasks, filterCity, filterPromptType, filterWebsite, filterHasNote, selectedDate]);
 
   const aiTasks = useMemo(() => {
     return tasks.filter(task => {
@@ -1718,9 +1741,12 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
       if (filterCity && task.city !== filterCity) return false;
       if (filterPromptType && task.prompt_type !== filterPromptType) return false;
       if (filterWebsite && (!task.websites || !task.websites.includes(filterWebsite))) return false;
+      // 备注筛选
+      if (filterHasNote === 'has_note' && !task.writing_suggestions) return false;
+      if (filterHasNote === 'no_note' && task.writing_suggestions) return false;
       return true;
     });
-  }, [tasks, filterCity, filterPromptType, filterWebsite, selectedDate]);
+  }, [tasks, filterCity, filterPromptType, filterWebsite, filterHasNote, selectedDate]);
 
   // 待发布任务（所有有 ready 状态文章的任务）
   const readyTasks = useMemo(() => {
@@ -2446,13 +2472,26 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                     bordered={false}
                     options={websites.map(w => ({ label: `${w.name} (${w.platform})`, value: w.id }))}
                   />
-                  {(filterCity || filterPromptType || filterWebsite) && (
+                  <Select
+                    placeholder="备注筛选"
+                    value={filterHasNote}
+                    onChange={setFilterHasNote}
+                    allowClear
+                    style={{ width: 130, borderRadius: 12 }}
+                    bordered={false}
+                    options={[
+                      { label: '📝 有备注', value: 'has_note' },
+                      { label: '无备注', value: 'no_note' },
+                    ]}
+                  />
+                  {(filterCity || filterPromptType || filterWebsite || filterHasNote) && (
                     <Button
                       type="link"
                       onClick={() => {
                         setFilterCity(undefined);
                         setFilterPromptType(undefined);
                         setFilterWebsite(undefined);
+                        setFilterHasNote(undefined);
                       }}
                     >
                       清除筛选
