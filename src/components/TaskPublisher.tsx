@@ -80,6 +80,7 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
       message.warning('文章内容为空，无法发布');
       return;
     }
+    console.log('[publishToLutuitui] article.content 类型:', typeof article.content, '长度:', (article.content || '').length, '前100字:', JSON.stringify(article.content)?.substring(0, 100));
     setPublishingLutuitui(article.id);
     try {
       const { title, body } = extractTitleAndBody(article.content, `${task.city}文章`);
