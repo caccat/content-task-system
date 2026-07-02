@@ -27,6 +27,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { title, content, mediaId, outOrderNo, mediaSource } = req.body || {};
 
+    console.log('[鹿推推] 收到请求体 keys:', Object.keys(req.body || {}));
+    console.log('[鹿推推] title 类型:', typeof title, '值:', JSON.stringify(title)?.substring(0, 100));
+    console.log('[鹿推推] content 类型:', typeof content, '长度:', (content || '').length);
+    console.log('[鹿推推] mediaId:', mediaId);
+
     if (!title || !content) {
       return res.status(400).json({ error: '缺少必填参数: title, content' });
     }
