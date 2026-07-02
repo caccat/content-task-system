@@ -16,18 +16,28 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
   const { websites: managedWebsites, loading: websitesLoading } = useWebsites();
   const [publishingLutuitui, setPublishingLutuitui] = useState<string | null>(null);
 
-  // 提取标题：取第一行非空文本作为标题，保留完整正文
+  // 提取标题：取第一行文本作为标题，从正文中移除包含该文本的标题元素避免重复
   const extractTitleAndBody = (html: string, fallback: string): { title: string; body: string } => {
     if (!html) return { title: fallback, body: '' };
     const div = document.createElement('div');
     div.innerHTML = html;
 
-    // 按换行取第一行非空文本作为标题
+    // 按换行取第一行非空文本作为标题（innerText 返回纯文本，无 HTML 标签）
     const lines = (div.innerText || div.textContent || '').split('\n').map(l => l.trim()).filter(Boolean);
     const title = lines[0]?.substring(0, 100) || fallback;
 
-    // 保留完整 HTML 正文（不删除任何元素）
-    return { title, body: html };
+    // 找到直接以标题文本开头的顶层元素（如 h1/h2/p），只移除它
+    // 避免误删包裹整篇文章的根 div（Quill 常把内容包在 <div data-zone-id> 里）
+    for (const child of Array.from(div.children)) {
+      const el = child as HTMLElement;
+      const text = (el.innerText || '').trim();
+      if (text && (text === title || text.startsWith(title))) {
+        child.remove();
+        break;
+      }
+    }
+
+    return { title, body: div.innerHTML };
   };
 
   // 根据文章的 website 字段查找鹿推推 mediaId
