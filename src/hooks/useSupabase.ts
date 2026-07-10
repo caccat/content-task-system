@@ -137,6 +137,8 @@ export function useTasks() {
       ...taskData,
       generation_mode: taskData.generation_mode || 'manual',
       ai_status: taskData.ai_status || null,
+      user_title: taskData.user_title || null,
+      extra_requirement: taskData.extra_requirement || null,
     };
 
     const { data, error } = await supabase

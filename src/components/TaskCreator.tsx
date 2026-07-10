@@ -713,11 +713,16 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
       message.error('没有可创建的任务');
       return;
     }
-    await onSubmit(tasks);
-    setPreviewVisible(false);
-    setRows([createEmptyRow()]);
-    setSelectedRowKeys([]);
-    clearDraft(); // 创建成功后清空草稿
+    try {
+      await onSubmit(tasks);
+      setPreviewVisible(false);
+      setRows([createEmptyRow()]);
+      setSelectedRowKeys([]);
+      clearDraft(); // 只有成功后才清空草稿
+    } catch (error: any) {
+      message.error('创建失败: ' + (error.message || '请检查网络或数据库'));
+      // 创建失败时不关闭弹窗、不清空草稿，保留用户数据
+    }
   };
 
   // 计算统计
@@ -1936,6 +1941,7 @@ function CreateTaskPage() {
       message.success(`成功创建 ${tasks.length} 个任务！`);
     } catch (error: any) {
       message.error('批量创建失败: ' + (error.message || '请检查数据库表是否已创建'));
+      throw error; // 向上抛出，让调用方知道失败了
     } finally {
       setLoading(false);
     }
