@@ -561,8 +561,13 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
               {totalCount > 0 && (
                 <>
                   {configs.filter(c => c.count > 0).map((config, idx) => (
-                    <Tag key={idx} color="blue" style={{ maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {getWebsiteName(config.websiteId)} × {config.count}
+                    <Tag key={idx} color="blue" style={{ maxWidth: 110, display: 'inline-flex', alignItems: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'rtl', maxWidth: 90 }}>
+                        {getWebsiteName(config.websiteId)}
+                      </span>
+                      <span style={{ flexShrink: 0, marginLeft: 4 }}>
+                        × {config.count}
+                      </span>
                     </Tag>
                   ))}
                 </>
