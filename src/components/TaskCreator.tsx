@@ -503,11 +503,11 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
       title: '城市',
       dataIndex: 'city',
       key: 'city',
-      width: 140,
+      width: 70,
       render: (city: string, record: BatchTaskRow) => (
         <Input
           value={city}
-          placeholder="输入城市"
+          placeholder="城市"
           onChange={(e) => updateRow(record.id, { city: e.target.value })}
           onPaste={(e) => {
             e.preventDefault();
@@ -515,6 +515,7 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
             handleCityPaste(record.id, pasteText);
           }}
           size="small"
+          style={{ width: 60 }}
         />
       ),
     },
@@ -540,7 +541,7 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
         </div>
       ),
       key: type.id,
-      width: 180,
+      width: 130,
       render: (_: any, record: BatchTaskRow) => {
         const configs = record.promptTypeConfigs[type.id] || [];
         const totalCount = configs.reduce((sum, c) => sum + c.count, 0);
@@ -2118,7 +2119,7 @@ function OverdueTasksDeleter() {
 // 主组件
 export default function TaskCreator({ defaultView = 'create' }: { defaultView?: 'create' | 'created' | 'overdue' }) {
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
+    <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px' }}>
       <Card title="创建内容生产和发布任务" bordered={false}>
         {defaultView === 'create' ? (
           <CreateTaskPage />
