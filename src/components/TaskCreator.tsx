@@ -553,23 +553,25 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
               padding: '4px',
               background: totalCount > 0 ? '#f6ffed' : 'transparent',
               borderRadius: 4,
+              width: 120, // 固定宽度防止被 Tag 撑开
+              overflow: 'hidden',
             }}
           >
             <Space direction="vertical" size="small" style={{ width: '100%' }}>
               {totalCount > 0 && (
                 <>
                   {configs.filter(c => c.count > 0).map((config, idx) => (
-                    <Tag key={idx} color="blue">
+                    <Tag key={idx} color="blue" style={{ maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {getWebsiteName(config.websiteId)} × {config.count}
                     </Tag>
                   ))}
                 </>
               )}
-              <Space size="small">
+              <Space size="small" style={{ flexWrap: 'nowrap' }}>
                 <Button 
                   type="link" 
                   size="small"
-                  style={{ padding: 0, fontSize: 12 }}
+                  style={{ padding: 0, fontSize: 12, minWidth: 24 }}
                   onClick={(e) => {
                     e.stopPropagation();
                     setDetailRowId(record.id);
@@ -583,7 +585,7 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
                   <Button 
                     type="link" 
                     size="small"
-                    style={{ padding: 0, fontSize: 12 }}
+                    style={{ padding: 0, fontSize: 12, minWidth: 24 }}
                     onClick={(e) => {
                       e.stopPropagation();
                       copyPromptConfig(record, type.id);
@@ -595,7 +597,7 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
                 <Button 
                   type="link" 
                   size="small"
-                  style={{ padding: 0, fontSize: 12 }}
+                  style={{ padding: 0, fontSize: 12, minWidth: 24 }}
                   onClick={(e) => {
                     e.stopPropagation();
                     pastePromptConfig(record.id, type.id);
@@ -608,7 +610,7 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
                     type="link" 
                     size="small"
                     danger
-                    style={{ padding: 0, fontSize: 12 }}
+                    style={{ padding: 0, fontSize: 12, minWidth: 24 }}
                     onClick={(e) => {
                       e.stopPropagation();
                       updateWebsiteConfig(record.id, type.id, []);
