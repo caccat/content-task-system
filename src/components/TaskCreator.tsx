@@ -2119,7 +2119,7 @@ function OverdueTasksDeleter() {
 // 主组件
 export default function TaskCreator({ defaultView = 'create' }: { defaultView?: 'create' | 'created' | 'overdue' }) {
   return (
-    <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px' }}>
+    <div style={{ width: '100%', padding: '24px' }}>
       <Card title="创建内容生产和发布任务" bordered={false}>
         {defaultView === 'create' ? (
           <CreateTaskPage />
