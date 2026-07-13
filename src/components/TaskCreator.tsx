@@ -562,12 +562,20 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
                 <>
                   {configs.filter(c => c.count > 0).map((config, idx) => (
                     <Tag key={idx} color="blue" style={{ maxWidth: 110, display: 'inline-flex', alignItems: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'rtl', maxWidth: 90 }}>
-                        {getWebsiteName(config.websiteId)}
-                      </span>
-                      <span style={{ flexShrink: 0, marginLeft: 4 }}>
-                        × {config.count}
-                      </span>
+                      {(() => {
+                        const fullName = getWebsiteName(config.websiteId);
+                        // 尝试把括号及以后的内容截断，保留开头网站名 + ... + 数量
+                        const match = fullName.match(/^([^（(]+[（(])/);
+                        const prefix = match ? match[1] : fullName.slice(0, 8);
+                        return (
+                          <>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 75, direction: 'ltr' }}>
+                              {prefix}
+                            </span>
+                            <span style={{ flexShrink: 0, marginLeft: 4 }}>× {config.count}</span>
+                          </>
+                        );
+                      })()}
                     </Tag>
                   ))}
                 </>
