@@ -274,15 +274,29 @@ interface BatchTaskRow {
   promptTypeConfigs: Record<string, WebsiteConfig[]>; // key: promptTypeId
 }
 
+// 提示词分类函数
+function classifyPromptType(typeName: string): 'original' | 'multi' | 'online' {
+  if (typeName.includes('在线')) return 'online';
+  if (typeName.includes('多特点')) return 'multi';
+  return 'original';
+}
+
 // 批量任务创建 - 新设计
 function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit: (tasks: any[]) => void; loading: boolean; hideCreatedTab?: boolean }) {
   const [activeTab, setActiveTab] = useState<'create' | 'created'>('create');
+  const [categoryTab, setCategoryTab] = useState<'all' | 'original' | 'multi' | 'online'>('all');
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [detailRowId, setDetailRowId] = useState<string | null>(null);
   const [activePromptType, setActivePromptType] = useState<string>('');
   const promptTypes = usePromptTypes();
   const { websites: managedWebsites } = useWebsites();
+
+  // 按分类过滤提示词类型
+  const filteredPromptTypes = useMemo(() => {
+    if (categoryTab === 'all') return promptTypes;
+    return promptTypes.filter(pt => classifyPromptType(pt.type) === categoryTab);
+  }, [promptTypes, categoryTab]);
 
   // 创建空行
   const createEmptyRow = (): BatchTaskRow => {
@@ -534,7 +548,7 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
         />
       ),
     },
-    ...promptTypes.map(type => ({
+    ...filteredPromptTypes.map(type => ({
       title: (
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span>{type.type}</span>
@@ -775,6 +789,17 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
       label: '批量创建',
       children: (
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Tabs
+            activeKey={categoryTab}
+            onChange={(key) => setCategoryTab(key as 'all' | 'original' | 'multi' | 'online')}
+            size="small"
+            items={[
+              { key: 'all', label: '全部' },
+              { key: 'original', label: '原本' },
+              { key: 'multi', label: '多特点' },
+              { key: 'online', label: '在线' },
+            ]}
+          />
           <Table
             rowSelection={rowSelection}
             dataSource={rows}
@@ -811,7 +836,7 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
           <Card size="small" style={{ background: '#f6ffed' }}>
             <Row gutter={16}>
               <Col>统计：共 {stats.totalCities} 个城市，{stats.totalArticles} 篇文章</Col>
-              {promptTypes.map(type => (
+              {filteredPromptTypes.map(type => (
                 <Col key={type.id}>
                   {type.type}：{stats.typeStats[type.id] || 0} 篇
                 </Col>
@@ -915,7 +940,24 @@ function DetailConfigPanel({
   defaultActiveType?: string;
   onUpdate: (configs: { promptTypeId: string; websiteConfigs: WebsiteConfig[] }) => void;
 }) {
+  const [categoryTab, setCategoryTab] = useState<'original' | 'multi' | 'online'>('original');
   const [activeType, setActiveType] = useState(defaultActiveType || promptTypes[0]?.id);
+
+  // 按分类筛选提示词
+  const categorizedTypes = useMemo(() => ({
+    original: promptTypes.filter(pt => classifyPromptType(pt.type) === 'original'),
+    multi: promptTypes.filter(pt => classifyPromptType(pt.type) === 'multi'),
+    online: promptTypes.filter(pt => classifyPromptType(pt.type) === 'online'),
+  }), [promptTypes]);
+
+  const currentTypes = categorizedTypes[categoryTab];
+
+  // 切换分类时自动选中第一个提示词
+  useEffect(() => {
+    if (currentTypes.length > 0 && !currentTypes.find(t => t.id === activeType)) {
+      setActiveType(currentTypes[0].id);
+    }
+  }, [categoryTab, currentTypes, activeType]);
 
   const addWebsiteConfig = (promptTypeId: string) => {
     const configs = row.promptTypeConfigs[promptTypeId] || [];
@@ -948,60 +990,188 @@ function DetailConfigPanel({
   return (
     <div>
       <Title level={5}>{row.city} - 详细配置</Title>
-      <Tabs activeKey={activeType} onChange={setActiveType}>
-        {promptTypes.map(type => (
-          <Tabs.TabPane tab={type.type} key={type.id}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              {(row.promptTypeConfigs[type.id] || []).map((config, idx) => (
-                <Card key={idx} size="small" title={`配置 ${idx + 1}`}>
+      <Tabs activeKey={categoryTab} onChange={(key) => setCategoryTab(key as 'original' | 'multi' | 'online')} size="small">
+        <Tabs.TabPane tab="原本" key="original">
+          {currentTypes.length === 0 ? (
+            <Empty description="暂无原本类型的提示词" />
+          ) : (
+            <Tabs activeKey={activeType} onChange={setActiveType}>
+              {currentTypes.map(type => (
+                <Tabs.TabPane tab={type.type} key={type.id}>
                   <Space direction="vertical" style={{ width: '100%' }}>
-                    <Space>
-                      <Select
-                        value={config.websiteId || undefined}
-                        placeholder="选择网站"
-                        style={{ width: 200 }}
-                        showSearch
-                        filterOption={(input, option) =>
-                          String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
-                        }
-                        onChange={(value) => updateConfig(type.id, idx, { websiteId: value })}
-                      >
-                        {managedWebsites.map(w => (
-                          <Select.Option key={w.id} value={w.id}>
-                            {w.name} ({w.platform})
-                          </Select.Option>
-                        ))}
-                      </Select>
-                      <InputNumber
-                        min={1}
-                        value={config.count}
-                        onChange={(value) => updateConfig(type.id, idx, { count: value || 1 })}
-                        style={{ width: 80 }}
-                      />
-                      <Button danger size="small" onClick={() => removeConfig(type.id, idx)}>
-                        删除
-                      </Button>
-                    </Space>
-                    
-                    {/* 每篇文章的备注 */}
-                    {Array.from({ length: config.count }).map((_, noteIdx) => (
-                      <Input
-                        key={noteIdx}
-                        placeholder={`文章 ${noteIdx + 1} 备注`}
-                        value={config.notes[noteIdx] || ''}
-                        onChange={(e) => updateNote(type.id, idx, noteIdx, e.target.value)}
-                        size="small"
-                      />
+                    {(row.promptTypeConfigs[type.id] || []).map((config, idx) => (
+                      <Card key={idx} size="small" title={`配置 ${idx + 1}`}>
+                        <Space direction="vertical" style={{ width: '100%' }}>
+                          <Space>
+                            <Select
+                              value={config.websiteId || undefined}
+                              placeholder="选择网站"
+                              style={{ width: 200 }}
+                              showSearch
+                              filterOption={(input, option) =>
+                                String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
+                              }
+                              onChange={(value) => updateConfig(type.id, idx, { websiteId: value })}
+                            >
+                              {managedWebsites.map(w => (
+                                <Select.Option key={w.id} value={w.id}>
+                                  {w.name} ({w.platform})
+                                </Select.Option>
+                              ))}
+                            </Select>
+                            <InputNumber
+                              min={1}
+                              value={config.count}
+                              onChange={(value) => updateConfig(type.id, idx, { count: value || 1 })}
+                              style={{ width: 80 }}
+                            />
+                            <Button danger size="small" onClick={() => removeConfig(type.id, idx)}>
+                              删除
+                            </Button>
+                          </Space>
+                          
+                          {/* 每篇文章的备注 */}
+                          {Array.from({ length: config.count }).map((_, noteIdx) => (
+                            <Input
+                              key={noteIdx}
+                              placeholder={`文章 ${noteIdx + 1} 备注`}
+                              value={config.notes[noteIdx] || ''}
+                              onChange={(e) => updateNote(type.id, idx, noteIdx, e.target.value)}
+                              size="small"
+                            />
+                          ))}
+                        </Space>
+                      </Card>
                     ))}
+                    <Button type="dashed" block icon={<PlusOutlined />} onClick={() => addWebsiteConfig(type.id)}>
+                      添加网站配置
+                    </Button>
                   </Space>
-                </Card>
+                </Tabs.TabPane>
               ))}
-              <Button type="dashed" block icon={<PlusOutlined />} onClick={() => addWebsiteConfig(type.id)}>
-                添加网站配置
-              </Button>
-            </Space>
-          </Tabs.TabPane>
-        ))}
+            </Tabs>
+          )}
+        </Tabs.TabPane>
+        <Tabs.TabPane tab="多特点" key="multi">
+          {currentTypes.length === 0 ? (
+            <Empty description="暂无多特点类型的提示词" />
+          ) : (
+            <Tabs activeKey={activeType} onChange={setActiveType}>
+              {currentTypes.map(type => (
+                <Tabs.TabPane tab={type.type} key={type.id}>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    {(row.promptTypeConfigs[type.id] || []).map((config, idx) => (
+                      <Card key={idx} size="small" title={`配置 ${idx + 1}`}>
+                        <Space direction="vertical" style={{ width: '100%' }}>
+                          <Space>
+                            <Select
+                              value={config.websiteId || undefined}
+                              placeholder="选择网站"
+                              style={{ width: 200 }}
+                              showSearch
+                              filterOption={(input, option) =>
+                                String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
+                              }
+                              onChange={(value) => updateConfig(type.id, idx, { websiteId: value })}
+                            >
+                              {managedWebsites.map(w => (
+                                <Select.Option key={w.id} value={w.id}>
+                                  {w.name} ({w.platform})
+                                </Select.Option>
+                              ))}
+                            </Select>
+                            <InputNumber
+                              min={1}
+                              value={config.count}
+                              onChange={(value) => updateConfig(type.id, idx, { count: value || 1 })}
+                              style={{ width: 80 }}
+                            />
+                            <Button danger size="small" onClick={() => removeConfig(type.id, idx)}>
+                              删除
+                            </Button>
+                          </Space>
+                          
+                          {Array.from({ length: config.count }).map((_, noteIdx) => (
+                            <Input
+                              key={noteIdx}
+                              placeholder={`文章 ${noteIdx + 1} 备注`}
+                              value={config.notes[noteIdx] || ''}
+                              onChange={(e) => updateNote(type.id, idx, noteIdx, e.target.value)}
+                              size="small"
+                            />
+                          ))}
+                        </Space>
+                      </Card>
+                    ))}
+                    <Button type="dashed" block icon={<PlusOutlined />} onClick={() => addWebsiteConfig(type.id)}>
+                      添加网站配置
+                    </Button>
+                  </Space>
+                </Tabs.TabPane>
+              ))}
+            </Tabs>
+          )}
+        </Tabs.TabPane>
+        <Tabs.TabPane tab="在线" key="online">
+          {currentTypes.length === 0 ? (
+            <Empty description="暂无在线类型的提示词" />
+          ) : (
+            <Tabs activeKey={activeType} onChange={setActiveType}>
+              {currentTypes.map(type => (
+                <Tabs.TabPane tab={type.type} key={type.id}>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    {(row.promptTypeConfigs[type.id] || []).map((config, idx) => (
+                      <Card key={idx} size="small" title={`配置 ${idx + 1}`}>
+                        <Space direction="vertical" style={{ width: '100%' }}>
+                          <Space>
+                            <Select
+                              value={config.websiteId || undefined}
+                              placeholder="选择网站"
+                              style={{ width: 200 }}
+                              showSearch
+                              filterOption={(input, option) =>
+                                String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
+                              }
+                              onChange={(value) => updateConfig(type.id, idx, { websiteId: value })}
+                            >
+                              {managedWebsites.map(w => (
+                                <Select.Option key={w.id} value={w.id}>
+                                  {w.name} ({w.platform})
+                                </Select.Option>
+                              ))}
+                            </Select>
+                            <InputNumber
+                              min={1}
+                              value={config.count}
+                              onChange={(value) => updateConfig(type.id, idx, { count: value || 1 })}
+                              style={{ width: 80 }}
+                            />
+                            <Button danger size="small" onClick={() => removeConfig(type.id, idx)}>
+                              删除
+                            </Button>
+                          </Space>
+                          
+                          {Array.from({ length: config.count }).map((_, noteIdx) => (
+                            <Input
+                              key={noteIdx}
+                              placeholder={`文章 ${noteIdx + 1} 备注`}
+                              value={config.notes[noteIdx] || ''}
+                              onChange={(e) => updateNote(type.id, idx, noteIdx, e.target.value)}
+                              size="small"
+                            />
+                          ))}
+                        </Space>
+                      </Card>
+                    ))}
+                    <Button type="dashed" block icon={<PlusOutlined />} onClick={() => addWebsiteConfig(type.id)}>
+                      添加网站配置
+                    </Button>
+                  </Space>
+                </Tabs.TabPane>
+              ))}
+            </Tabs>
+          )}
+        </Tabs.TabPane>
       </Tabs>
     </div>
   );
