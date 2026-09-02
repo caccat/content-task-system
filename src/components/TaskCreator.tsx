@@ -15,6 +15,27 @@ const { Panel } = Collapse;
 // 草稿存储键
 const DRAFT_STORAGE_KEY = 'batch_task_draft';
 
+// 批量创建全部成功后，向飞书群发送一条汇总通知（webhook 保存在服务端）
+const sendBatchCreatedNotification = async (tasks: any[]) => {
+  const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+  const response = await fetch(`${apiUrl}/api/send-feishu-notification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'task_created',
+      tasks: tasks.map((t) => ({
+        city: t.city,
+        quantity: t.quantity || 1,
+        deadline: t.deadline,
+      })),
+    }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.error || `发送失败: ${response.status}`);
+  }
+};
+
 // 从 Supabase 读取提示词类型
 const usePromptTypes = () => {
   const { prompts } = usePrompts();
@@ -2125,6 +2146,10 @@ function CreateTaskPage() {
         await createTask(task);
       }
       message.success(`成功创建 ${tasks.length} 个任务！`);
+      // 批量创建成功后，向飞书群发送一条汇总通知（通知失败不影响主流程）
+      if (tasks.length > 0) {
+        sendBatchCreatedNotification(tasks).catch((err) => console.error('飞书群通知发送失败:', err));
+      }
     } catch (error: any) {
       message.error('批量创建失败: ' + (error.message || '请检查数据库表是否已创建'));
       throw error; // 向上抛出，让调用方知道失败了

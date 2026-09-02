@@ -1,8 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Card, List, Badge, Tag, Button, Modal, Input, message, Typography, Space, Progress, Popconfirm, Select, Row, Col, DatePicker, Table, Checkbox, Spin, Alert, Empty, Tabs, Radio, Tooltip } from 'antd';
+import { Card, List, Badge, Tag, Button, Modal, Input, message, Typography, Space, Progress, Popconfirm, Select, Row, Col, DatePicker, Table, Checkbox, Spin, Alert, Empty, Tabs, Tooltip } from 'antd';
 import { EditOutlined, FileTextOutlined, DeleteOutlined, ExclamationCircleOutlined, CheckCircleOutlined, UndoOutlined, CalendarOutlined, RobotOutlined, UserOutlined, LoadingOutlined, SyncOutlined, StopOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useTasks, useArticles } from '../hooks/useSupabase';
-import { useSettings } from '../hooks/useSettings';
 import { usePrompts } from '../hooks/usePrompts';
 import { useWebsites } from '../hooks/useWebsites';
 import { supabase } from '../supabase';
@@ -459,29 +458,6 @@ function RetryTaskEditor({
   );
 }
 
-// 发送飞书通知（通过 API 端点，避免 webhook 暴露在前端）
-const sendFeishuNotification = async (task: TaskWithArticles, article: Article) => {
-  try {
-    // 调用 API 端点发送通知，webhook 地址保存在服务端
-    const apiUrl = import.meta.env.VITE_API_URL || '';
-    const response = await fetch(`${apiUrl}/api/send-feishu-notification`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        city: task.city,
-        deadline: dayjs(task.deadline).format('YYYY-MM-DD'),
-        content: `文章状态：准备发布\n\n请尽快安排发布。`
-      })
-    });
-    
-    if (!response.ok) {
-      console.error('飞书通知发送失败:', await response.text());
-    }
-  } catch (error) {
-    console.error('发送飞书通知出错:', error);
-  }
-};
-
 // 状态标签组件
 const StatusTag = ({ status, aiStatus }: { status: string; aiStatus?: string | null }) => {
   if (aiStatus === 'pending') {
@@ -508,7 +484,7 @@ const StatusTag = ({ status, aiStatus }: { status: string; aiStatus?: string | n
 };
 
 // 文章编辑器组件
-function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArticles; visible: boolean; onClose: () => void; settings: Record<string, string> }) {
+function ArticleEditor({ task, visible, onClose }: { task: TaskWithArticles; visible: boolean; onClose: () => void }) {
   const { articles, updateArticle, loading, refreshArticles } = useArticles(task.id);
   const [editingArticle, setEditingArticle] = useState<Article | null>(null);
   const [content, setContent] = useState('');
@@ -616,17 +592,10 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
     }
   };
 
-  const handleMarkReady = async (article: Article, settings: Record<string, string>) => {
+  const handleMarkReady = async (article: Article) => {
     try {
       await updateArticle(article.id, { status: 'ready' });
       message.success('已标记为准备发布');
-
-      const notifyMode = settings['feishu_notify_mode'] || 'immediate';
-
-      // 通过 API 发送通知，webhook 保存在服务端
-      if (notifyMode === 'immediate') {
-        await sendFeishuNotification(task, article);
-      }
 
       // 成功后关闭弹窗
       onClose();
@@ -747,7 +716,7 @@ function ArticleEditor({ task, visible, onClose, settings }: { task: TaskWithArt
                   key="ready"
                   type="primary"
                   icon={<CheckCircleOutlined />}
-                  onClick={() => handleMarkReady(article, settings)}
+                  onClick={() => handleMarkReady(article)}
                   size="small"
                   disabled={!article.content}
                   title={!article.content ? '请先编辑添加内容' : ''}
@@ -1630,7 +1599,6 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   // defaultStatus 决定显示模式：draft=未生成(人工/AI双Tab), ready=待发布, completed=已完成
   const [activeTab, setActiveTab] = useState(defaultStatus === 'draft' ? 'manual' : 'manual');
-  const { settings, setSetting } = useSettings();
   const { websites } = useWebsites();
   const { prompts } = usePrompts();
 
@@ -2345,19 +2313,6 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
             管理您的内容生成任务
           </Text>
         </div>
-        <Radio.Group
-          value={settings['feishu_notify_mode'] || 'immediate'}
-          onChange={async (e) => {
-            await setSetting('feishu_notify_mode', e.target.value);
-            message.success(`已切换为${e.target.value === 'immediate' ? '即时通知' : '批量通知'}`);
-          }}
-          optionType="button"
-          buttonStyle="solid"
-          options={[
-            { label: '即时通知', value: 'immediate' },
-            { label: '批量通知', value: 'batch' },
-          ]}
-        />
       </div>
 
       {/* 根据页面类型显示不同内容 */}
@@ -2643,7 +2598,6 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
           task={selectedTask}
           visible={!!selectedTask}
           onClose={() => setSelectedTask(null)}
-          settings={settings}
         />
       )}
     </div>

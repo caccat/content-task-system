@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, Button, message, Typography, Space, Divider, Radio, Switch, TimePicker } from 'antd';
+import { Card, Button, message, Typography, Space, Divider, Switch, TimePicker } from 'antd';
 import { BellOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useSettings } from '../hooks/useSettings';
 import dayjs from 'dayjs';
@@ -8,7 +8,6 @@ const { Title, Text } = Typography;
 
 export default function Settings() {
   const { settings, setSetting, loading } = useSettings();
-  const [notifyMode, setNotifyMode] = useState('immediate');
   const [dailyNotificationEnabled, setDailyNotificationEnabled] = useState(false);
   const [dailyNotificationTime, setDailyNotificationTime] = useState(dayjs('17:30', 'HH:mm'));
 
@@ -16,21 +15,10 @@ export default function Settings() {
   useEffect(() => {
     if (loading) return; // 等待数据加载完成
     
-    setNotifyMode(settings.feishu_notify_mode || 'immediate');
     setDailyNotificationEnabled(settings.daily_notification_enabled === 'true');
     const savedTime = settings.daily_notification_time || '17:30';
     setDailyNotificationTime(dayjs(savedTime, 'HH:mm'));
   }, [loading, settings]);
-
-  const handleNotifyModeChange = async (value: string) => {
-    try {
-      await setSetting('feishu_notify_mode', value);
-      setNotifyMode(value);
-      message.success(`已切换为${value === 'immediate' ? '即时通知' : '批量通知'}`);
-    } catch {
-      message.error('保存失败');
-    }
-  };
 
   const testWebhook = async () => {
     try {
@@ -40,9 +28,7 @@ export default function Settings() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          city: '测试任务',
-          deadline: dayjs().format('YYYY-MM-DD'),
-          content: '🔔 测试消息\n\n飞书通知配置成功！当有内容准备发布时，您将收到通知。'
+          content: '🔔 测试消息\n\n飞书通知配置成功！当新任务批量创建时，您将收到飞书群通知。'
         })
       });
 
@@ -112,7 +98,7 @@ export default function Settings() {
               飞书通知设置
             </Title>
             <Text type="secondary">
-              配置飞书群机器人，当内容准备发布时自动通知
+              配置飞书群机器人，当任务批量创建成功时自动在群内通知内容生产者
             </Text>
           </div>
 
@@ -125,17 +111,6 @@ export default function Settings() {
               <li>如需修改，请联系管理员在 Vercel 环境变量中配置 <code>FEISHU_WEBHOOK</code></li>
               <li>也可以直接在数据库 settings 表中配置 <code>feishu_webhook</code> 字段</li>
             </ol>
-          </div>
-
-          <div>
-            <Text strong style={{ display: 'block', marginBottom: 8 }}>通知模式</Text>
-            <Radio.Group
-              value={notifyMode}
-              onChange={(e) => handleNotifyModeChange(e.target.value)}
-            >
-              <Radio value="immediate">即时通知（每篇内容准备好立即发送）</Radio>
-              <Radio value="batch">批量通知（每天汇总发送一次）</Radio>
-            </Radio.Group>
           </div>
 
           <Divider />
