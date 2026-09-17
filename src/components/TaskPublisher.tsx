@@ -23,6 +23,31 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
     const div = document.createElement('div');
     div.innerHTML = html;
 
+    // 把 <br> 和块级元素边界还原成换行：textContent 会把它们粘成一行，导致"标题+正文同段"被误判
+    const BLOCK_TAGS = ['P', 'DIV', 'LI', 'TD', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
+    const getLineText = (el: Element): string => {
+      let out = '';
+      const walkLines = (node: Node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          out += node.textContent || '';
+          return;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const e = node as Element;
+          if (e.tagName === 'BR') {
+            out += '\n';
+            return;
+          }
+          if (BLOCK_TAGS.includes(e.tagName) && out && !out.endsWith('\n')) {
+            out += '\n';
+          }
+          e.childNodes.forEach(walkLines);
+        }
+      };
+      walkLines(el);
+      return out.replace(/[ \t\u00a0]+/g, ' ').trim();
+    };
+
     // 收集所有包含文本的叶子元素（排除空的和太短的如 <br>）
     const textElements: { el: Element; text: string }[] = [];
     const walk = (node: Node) => {
@@ -33,7 +58,7 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
           parent = parent.parentElement;
         }
         if (parent && parent !== div && !textElements.some(t => t.el === parent)) {
-          textElements.push({ el: parent, text: parent.textContent?.trim() || '' });
+          textElements.push({ el: parent, text: getLineText(parent) });
         }
       }
       if (node.childNodes) {
@@ -67,10 +92,12 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
       title = firstLine || fallback;
     }
 
-    // 仅当该元素确实只承载标题时才删除，避免"标题+正文首段"同段的文章被截断
+    // 仅当该元素确实只承载标题时才删除，避免误删正文
     if (titleEl) {
-      const fullText = (titleEl.textContent || '').trim();
-      if (fullText.length <= title.length + 20) {
+      const lines = getLineText(titleEl).split('\n').map(s => s.trim()).filter(Boolean);
+      // 三个条件都满足才删：① 除它以外还有别的正文块 ② 该块只有一行 ③ 该行内容基本就是标题
+      const hasOtherContent = textElements.some(t => t.el !== titleEl && t.text.trim().length > 0);
+      if (hasOtherContent && lines.length <= 1 && (lines[0] || '').length <= title.length + 20) {
         titleEl.remove();
       }
     }
