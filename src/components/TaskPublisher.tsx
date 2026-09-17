@@ -16,33 +16,57 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
   const { websites: managedWebsites, loading: websitesLoading } = useWebsites();
   const [publishingLutuitui, setPublishingLutuitui] = useState<string | null>(null);
 
-  // 提取标题：优先取第一个 h1/h2/h3 元素作为标题，移除它避免正文重复
+    // 提取标题：遍历所有文本节点，取第一个长度 ≥ 10 且有意义的文本行作为标题
+  // 然后从 DOM 中删除标题所在行（保留正文完整）
   const extractTitleAndBody = (html: string, fallback: string): { title: string; body: string } => {
     if (!html) return { title: fallback, body: '' };
     const div = document.createElement('div');
     div.innerHTML = html;
 
-    // 优先取 h1/h2/h3 作为标题（Quill 编辑器生成的文章通常用 h1 作为标题）
+    // 收集所有包含文本的叶子元素（排除空的和太短的如 <br>）
+    const textElements: { el: Element; text: string }[] = [];
+    const walk = (node: Node) => {
+      if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
+        // 找到最近的块级父元素（排除容器 DIV，避免选中包裹层导致正文被整体删除）
+        let parent = node.parentElement;
+        while (parent && parent !== div && !['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'BLOCKQUOTE'].includes(parent.tagName)) {
+          parent = parent.parentElement;
+        }
+        if (parent && parent !== div && !textElements.some(t => t.el === parent)) {
+          textElements.push({ el: parent, text: parent.textContent?.trim() || '' });
+        }
+      }
+      if (node.childNodes) {
+        node.childNodes.forEach(walk);
+      }
+    };
+    walk(div);
+
+    // 优先选择 h1-h6 作为标题元素，避免选中 p 或其他容器导致误删正文
     let title = '';
-    for (const tag of ['h1', 'h2', 'h3'] as const) {
-      const heading = div.querySelector(tag);
-      if (heading && heading.textContent?.trim()) {
-        title = heading.textContent.trim().substring(0, 100);
-        heading.remove(); // 移除标题元素避免正文重复
+    let titleEl: Element | null = null;
+    const headingTags = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
+    const preferred = textElements.filter(t => headingTags.includes(t.el.tagName) && t.text.length >= 10);
+    const candidates = preferred.length > 0 ? preferred : textElements;
+
+    for (const item of candidates) {
+      if (item.text.length >= 10) {
+        // 取第一行（处理多行文本）
+        title = item.text.split('\n')[0].trim().substring(0, 100);
+        titleEl = item.el;
         break;
       }
     }
 
-    // 没有标题标签时回退到第一行文本
+    // 回退
     if (!title) {
-      const lines = (div.innerText || '').split('\n').map(l => l.trim()).filter(Boolean);
-      title = lines[0]?.substring(0, 100) || fallback;
-      // 尝试删除包含该文本的第一个子元素
-      for (const child of Array.from(div.children)) {
-        const el = child as HTMLElement;
-        const text = (el.innerText || '').trim();
-        if (text === title || text.startsWith(title)) { child.remove(); break; }
-      }
+      const firstLine = textElements[0]?.text?.split('\n')[0]?.trim()?.substring(0, 100);
+      title = firstLine || fallback;
+    }
+
+    // 删除标题所在的元素避免正文重复
+    if (titleEl) {
+      titleEl.remove();
     }
 
     return { title: title || fallback, body: div.innerHTML };
