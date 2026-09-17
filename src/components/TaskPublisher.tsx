@@ -46,13 +46,16 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
     let title = '';
     let titleEl: Element | null = null;
     const headingTags = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
-    const preferred = textElements.filter(t => headingTags.includes(t.el.tagName) && t.text.length >= 10);
+    // 标题特征：长度适中（太长的多半是正文段落）
+    const isTitleLike = (t: string) => t.length >= 10 && t.length <= 150;
+    const preferred = textElements.filter(t => headingTags.includes(t.el.tagName) && isTitleLike(t.text));
     const candidates = preferred.length > 0 ? preferred : textElements;
 
     for (const item of candidates) {
-      if (item.text.length >= 10) {
-        // 取第一行（处理多行文本）
-        title = item.text.split('\n')[0].trim().substring(0, 100);
+      const firstLine = item.text.split('\n')[0].trim();
+      // 标题元素或"短文本块"才认定为标题，长段落不认（避免误删正文首段）
+      if (firstLine.length >= 10 && (headingTags.includes(item.el.tagName) || isTitleLike(item.text))) {
+        title = firstLine.substring(0, 100);
         titleEl = item.el;
         break;
       }
@@ -64,9 +67,12 @@ function ArticlePublisher({ task, visible, onClose }: { task: TaskWithArticles; 
       title = firstLine || fallback;
     }
 
-    // 删除标题所在的元素避免正文重复
+    // 仅当该元素确实只承载标题时才删除，避免"标题+正文首段"同段的文章被截断
     if (titleEl) {
-      titleEl.remove();
+      const fullText = (titleEl.textContent || '').trim();
+      if (fullText.length <= title.length + 20) {
+        titleEl.remove();
+      }
     }
 
     return { title: title || fallback, body: div.innerHTML };

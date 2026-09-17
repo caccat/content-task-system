@@ -579,14 +579,13 @@ function ArticleEditor({ task, visible, onClose }: { task: TaskWithArticles; vis
   const handleSave = async () => {
     if (!editingArticle) return;
     try {
-      await updateArticle(editingArticle.id, {
-        content,
-        status: content.trim() ? 'ready' : 'draft',
-      });
+      // 只保存内容，不改变文章状态（状态只能通过"准备发布"/"取消发布"按钮变更）
+      await updateArticle(editingArticle.id, { content });
       // 清除自动保存的草稿
       clearArticleDraft(editingArticle.id);
       message.success('文章已保存');
       setEditingArticle(null);
+      refreshArticles();
     } catch {
       message.error('保存失败');
     }
