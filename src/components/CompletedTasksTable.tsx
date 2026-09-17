@@ -54,7 +54,7 @@ interface CompletedTasksTableProps {
 }
 
 export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTableProps) {
-  const { tasks, loading, error } = useTasks();
+  const { tasks, loading, error, refreshTasks } = useTasks();
   const { prompts } = usePrompts();
   const { websites: managedWebsites } = useWebsites();
 
@@ -158,6 +158,24 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
     });
   }, [tableData, filterCity, filterPromptType, filterPlatform, searchText, filterCompletedDateRange, filterPublishedDateRange]);
 
+  // 打开预览：按需拉取该篇文章全文（列表数据只含摘要）
+  const openPreview = async (article: Article) => {
+    setPreviewArticle(article); // 先用摘要立即打开
+    try {
+      const supabase = (await import('../supabase')).supabase;
+      const { data, error } = await supabase
+        .from('articles')
+        .select('id, content')
+        .eq('id', article.id)
+        .single();
+      if (!error && data) {
+        setPreviewArticle({ ...article, content: data.content ?? '' });
+      }
+    } catch (err) {
+      console.error('[openPreview] 拉取全文失败:', err);
+    }
+  };
+
   // 更新文章字段
   const updateArticleField = async (articleId: string, field: string, value: any) => {
     try {
@@ -170,8 +188,8 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
       if (error) throw error;
 
       message.success('保存成功');
-      // 刷新数据
-      window.location.reload();
+      // 静默刷新列表数据（不再整页刷新）
+      refreshTasks();
     } catch (err) {
       message.error('保存失败');
       console.error(err);
@@ -306,7 +324,7 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
       render: (title: string, record: any) => (
         <Tooltip title={title}>
           <a
-            onClick={() => setPreviewArticle(record.article)}
+            onClick={() => openPreview(record.article)}
             style={{ color: '#1890ff', cursor: 'pointer' }}
           >
             <EyeOutlined style={{ marginRight: 4 }} />

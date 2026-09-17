@@ -2,14 +2,19 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../supabase';
 import type { Prompt } from '../types';
 
+// 模块级缓存：切换页面回来时先用缓存数据立即渲染
+let promptsCache: { data: Prompt[]; ts: number } | null = null;
+const PROMPTS_CACHE_TTL = 30 * 1000;
+
 export function usePrompts() {
-  const [prompts, setPrompts] = useState<Prompt[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [prompts, setPrompts] = useState<Prompt[]>(() => promptsCache?.data || []);
+  const [loading, setLoading] = useState(() => !promptsCache);
   const [error, setError] = useState<string | null>(null);
 
   const fetchPrompts = useCallback(async () => {
     try {
-      setLoading(true);
+      const cacheFresh = promptsCache && Date.now() - promptsCache.ts < PROMPTS_CACHE_TTL;
+      if (!cacheFresh) setLoading(true);
       const { data, error } = await supabase
         .from('prompts')
         .select('*')
@@ -22,6 +27,7 @@ export function usePrompts() {
       }
 
       setPrompts((data as Prompt[]) || []);
+      promptsCache = { data: (data as Prompt[]) || [], ts: Date.now() };
       setError(null);
     } catch (err) {
       console.error('Unexpected error:', err);
@@ -32,7 +38,8 @@ export function usePrompts() {
   }, []);
 
   useEffect(() => {
-    fetchPrompts();
+    const cacheFresh = promptsCache && Date.now() - promptsCache.ts < PROMPTS_CACHE_TTL;
+    if (!cacheFresh) fetchPrompts();
 
     const interval = setInterval(() => {
       fetchPrompts();

@@ -42,9 +42,16 @@ async function fetchWithRetry<T>(
   return null;
 }
 
+// 模块级任务列表缓存：切换菜单回来时先用缓存数据立即渲染，避免整页重新加载
+let tasksCache: { data: TaskWithArticles[]; ts: number } | null = null;
+const TASKS_CACHE_TTL = 30 * 1000; // 缓存有效期 30 秒，过期后台静默刷新
+
+// 文章列表轻量字段（不含全文 content，改用 content_head 摘要，大幅减少传输量）
+const ARTICLE_LIST_COLUMNS = 'id, task_id, status, website, notes, published_at, published_by, published_url, media_published_at, created_at, updated_at, content_head';
+
 export function useTasks() {
-  const [tasks, setTasks] = useState<TaskWithArticles[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tasks, setTasks] = useState<TaskWithArticles[]>(() => tasksCache?.data || []);
+  const [loading, setLoading] = useState(() => !tasksCache);
   const [error, setError] = useState<string | null>(null);
 
   const fetchTasks = useCallback(async () => {
@@ -66,31 +73,36 @@ export function useTasks() {
       }
 
       const taskIds = tasksData.map(t => t.id);
-      
-      // 分批查询文章数据（每批20个task_id，避免 .in() 参数过多导致 PostgREST 400 错误）
+
+      // 并行分批查询文章轻量字段（每批20个task_id，避免 .in() 参数过多导致 PostgREST 400 错误）
       const BATCH_SIZE = 20;
       let allArticles: any[] = [];
       if (taskIds.length > 0) {
+        const batches: string[][] = [];
         for (let i = 0; i < taskIds.length; i += BATCH_SIZE) {
-          const batch = taskIds.slice(i, i + BATCH_SIZE);
-          console.log(`[useTasks] 查询文章批次 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(taskIds.length / BATCH_SIZE)}, 包含 ${batch.length} 个任务`);
+          batches.push(taskIds.slice(i, i + BATCH_SIZE));
+        }
+        const results = await Promise.all(batches.map(async (batch, idx) => {
           try {
             const { data: batchArticles, error: batchError } = await supabase
               .from('articles')
-              .select('*')
+              .select(ARTICLE_LIST_COLUMNS)
               .in('task_id', batch);
 
             if (batchError) {
-              console.error(`[useTasks] 文章查询批次失败 (批次${Math.floor(i / BATCH_SIZE) + 1}):`, batchError);
-            } else if (batchArticles) {
-              allArticles = allArticles.concat(batchArticles);
+              console.error(`[useTasks] 文章查询批次失败 (批次${idx + 1}/${batches.length}):`, batchError);
+              return [] as any[];
             }
+            return batchArticles || [];
           } catch (err) {
-            console.error(`[useTasks] 文章查询异常 (批次${Math.floor(i / BATCH_SIZE) + 1}):`, err);
+            console.error(`[useTasks] 文章查询异常 (批次${idx + 1}/${batches.length}):`, err);
+            return [] as any[];
           }
-        }
+        }));
+        results.forEach(r => { allArticles = allArticles.concat(r); });
       }
-      const articlesData = allArticles;
+      // 用摘要列填充 content，保证列表页的真值判断 / 标题提取 / 前置预览逻辑不变
+      const articlesData = allArticles.map(a => ({ ...a, content: a.content_head ?? '' }));
 
       // 无论成功失败都继续显示任务
       if (!articlesData) {
@@ -107,6 +119,7 @@ export function useTasks() {
       });
 
       setTasks(tasksWithArticles);
+      tasksCache = { data: tasksWithArticles, ts: Date.now() };
       setError(null);
     } catch (err: any) {
       console.error('Unexpected error:', err);
@@ -117,8 +130,12 @@ export function useTasks() {
   }, []);
 
   useEffect(() => {
-    fetchTasks();
-    
+    // 有新鲜缓存（30秒内）时不立即请求，等轮询再刷新；否则立即拉取
+    const cacheFresh = tasksCache && Date.now() - tasksCache.ts < TASKS_CACHE_TTL;
+    if (!cacheFresh) {
+      fetchTasks();
+    }
+
     // 每 60 秒刷新一次（减少连接池压力）
     const interval = setInterval(() => {
       fetchTasks();

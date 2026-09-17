@@ -2,14 +2,19 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../supabase';
 import type { Website, WebsiteStatus } from '../types';
 
+// 模块级缓存：切换页面回来时先用缓存数据立即渲染
+let websitesCache: { data: Website[]; ts: number } | null = null;
+const WEBSITES_CACHE_TTL = 30 * 1000;
+
 export function useWebsites() {
-  const [websites, setWebsites] = useState<Website[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [websites, setWebsites] = useState<Website[]>(() => websitesCache?.data || []);
+  const [loading, setLoading] = useState(() => !websitesCache);
   const [error, setError] = useState<string | null>(null);
 
   const fetchWebsites = useCallback(async () => {
     try {
-      setLoading(true);
+      const cacheFresh = websitesCache && Date.now() - websitesCache.ts < WEBSITES_CACHE_TTL;
+      if (!cacheFresh) setLoading(true);
       const { data, error } = await supabase
         .from('websites')
         .select('*')
@@ -22,6 +27,7 @@ export function useWebsites() {
       }
 
       setWebsites((data as Website[]) || []);
+      websitesCache = { data: (data as Website[]) || [], ts: Date.now() };
       setError(null);
     } catch (err) {
       console.error('Unexpected error:', err);
@@ -32,7 +38,8 @@ export function useWebsites() {
   }, []);
 
   useEffect(() => {
-    fetchWebsites();
+    const cacheFresh = websitesCache && Date.now() - websitesCache.ts < WEBSITES_CACHE_TTL;
+    if (!cacheFresh) fetchWebsites();
 
     // 每 60 秒刷新一次（减少连接池压力）
     const interval = setInterval(() => {
