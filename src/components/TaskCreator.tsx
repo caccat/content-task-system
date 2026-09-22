@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Form, Input, Select, DatePicker, InputNumber, Button, Card, message, Space, Tabs, Table, Tag, Divider, Typography, Collapse, Modal, Empty, Row, Col, Badge, Popconfirm, Checkbox, DatePicker as AntDatePicker } from 'antd';
-import { PlusOutlined, DeleteOutlined, CopyOutlined, CheckCircleOutlined, SettingOutlined, EyeOutlined, CalendarOutlined, FilterOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { Form, Input, Select, DatePicker, InputNumber, Button, Card, message, Space, Tabs, Table, Tag, Divider, Typography, Collapse, Modal, Empty, Row, Col, Badge, Popconfirm, Checkbox, DatePicker as AntDatePicker, Tooltip, Dropdown } from 'antd';
+import { PlusOutlined, MinusOutlined, DeleteOutlined, CopyOutlined, CheckCircleOutlined, SettingOutlined, EyeOutlined, CalendarOutlined, FilterOutlined, ExclamationCircleOutlined, ColumnHeightOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useTasks } from '../hooks/useSupabase';
 import { useWebsites } from '../hooks/useWebsites';
@@ -310,6 +310,8 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [detailRowId, setDetailRowId] = useState<string | null>(null);
   const [activePromptType, setActivePromptType] = useState<string>('');
+  // 提示词列收起状态：仅影响界面显示，不改动 promptTypeConfigs 里的任何数据；刷新后恢复全部展开
+  const [collapsedTypes, setCollapsedTypes] = useState<Record<string, boolean>>({});
   const promptTypes = usePromptTypes();
   const { websites: managedWebsites } = useWebsites();
 
@@ -532,6 +534,31 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
     message.success('配置已粘贴');
   };
 
+  // 提示词列收起/展开（纯显示层操作）
+  const toggleColumnCollapsed = (typeId: string) => {
+    setCollapsedTypes(prev => ({ ...prev, [typeId]: !prev[typeId] }));
+  };
+
+  const collapseAllColumns = () => {
+    const next: Record<string, boolean> = {};
+    filteredPromptTypes.forEach(t => { next[t.id] = true; });
+    setCollapsedTypes(next);
+  };
+
+  const expandAllColumns = () => {
+    setCollapsedTypes({});
+  };
+
+  // 只收起"尚未配置任务"的列，已配置的列保持展开，避免误以为配置丢了
+  const collapseUnconfiguredColumns = () => {
+    const next: Record<string, boolean> = { ...collapsedTypes };
+    filteredPromptTypes.forEach(t => {
+      const configured = rows.some(r => (r.promptTypeConfigs[t.id] || []).some(c => c.count > 0));
+      if (!configured) next[t.id] = true;
+    });
+    setCollapsedTypes(next);
+  };
+
   // 表格列定义
   const columns = [
     {
@@ -539,6 +566,7 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
       dataIndex: 'city',
       key: 'city',
       width: 70,
+      fixed: 'left' as const,
       render: (city: string, record: BatchTaskRow) => (
         <Input
           value={city}
@@ -569,17 +597,53 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
         />
       ),
     },
-    ...filteredPromptTypes.map(type => ({
-      title: (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span>{type.type}</span>
-        </div>
-      ),
-      key: type.id,
-      width: 130,
-      render: (_: any, record: BatchTaskRow) => {
-        const configs = record.promptTypeConfigs[type.id] || [];
-        const totalCount = configs.reduce((sum, c) => sum + c.count, 0);
+    ...filteredPromptTypes.map(type => {
+      const isCollapsed = !!collapsedTypes[type.id];
+      return {
+        title: (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={type.type}>
+              {type.type}
+            </span>
+            <Tooltip title={isCollapsed ? '展开该列' : '收起该列'}>
+              <Button
+                type="text"
+                size="small"
+                style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, flexShrink: 0 }}
+                icon={isCollapsed ? <PlusOutlined /> : <MinusOutlined />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleColumnCollapsed(type.id);
+                }}
+              />
+            </Tooltip>
+          </div>
+        ),
+        key: type.id,
+        width: isCollapsed ? 76 : 130,
+        render: (_: any, record: BatchTaskRow) => {
+          const configs = record.promptTypeConfigs[type.id] || [];
+          const totalCount = configs.reduce((sum, c) => sum + c.count, 0);
+
+          // 收起态：只显示已配篇数，点击即展开。配置数据始终保留在 promptTypeConfigs 中，不受收起影响
+          if (isCollapsed) {
+            return (
+              <Tooltip title={`${type.type}：${totalCount > 0 ? `${totalCount} 篇（创建时会照常创建）` : '未配置'}，点击展开该列`}>
+                <Button
+                  type="link"
+                  size="small"
+                  style={{ padding: 0, fontSize: 12, color: totalCount > 0 ? undefined : 'rgba(0,0,0,0.35)' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleColumnCollapsed(type.id);
+                  }}
+                >
+                  {totalCount > 0 ? `${totalCount} 篇` : '未配'}
+                </Button>
+              </Tooltip>
+            );
+          }
+
         
         return (
           <div 
@@ -672,8 +736,9 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
             </Space>
           </div>
         );
-      },
-    })),
+        },
+      };
+    }),
     {
       title: '截止日期',
       dataIndex: 'deadline',
@@ -691,9 +756,10 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
     },
   ];
 
-  // 行选择配置
+  // 行选择配置（fixed: true 让勾选框列与城市列一起固定在左侧，横向滚动时不会跑掉）
   const rowSelection = {
     selectedRowKeys,
+    fixed: true as const,
     onChange: (newSelectedRowKeys: React.Key[]) => {
       setSelectedRowKeys(newSelectedRowKeys);
     },
@@ -790,6 +856,12 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
     return { totalCities, totalArticles, typeStats };
   }, [rows]);
 
+  // 收起的列数量；以及"已收起但仍配了任务"的列（需要提醒用户，避免以为配置丢了）
+  const collapsedCount = filteredPromptTypes.filter(t => collapsedTypes[t.id]).length;
+  const collapsedWithTasks = filteredPromptTypes
+    .filter(t => collapsedTypes[t.id] && (stats.typeStats[t.id] || 0) > 0);
+  const collapsedTaskCount = collapsedWithTasks.reduce((s, t) => s + (stats.typeStats[t.id] || 0), 0);
+
   // 如果没有提示词类型，显示提示
   if (promptTypes.length === 0) {
     return (
@@ -842,6 +914,19 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
             <Button icon={<SettingOutlined />} onClick={openDetailConfig} disabled={selectedRowKeys.length !== 1}>
               详细配置
             </Button>
+            <Dropdown
+              menu={{
+                items: [
+                  { key: 'collapse-all', icon: <MinusOutlined />, label: '全部收起', onClick: collapseAllColumns },
+                  { key: 'expand-all', icon: <PlusOutlined />, label: '全部展开', onClick: expandAllColumns },
+                  { key: 'collapse-empty', label: '收起未配置的项', onClick: collapseUnconfiguredColumns },
+                ],
+              }}
+            >
+              <Button icon={<ColumnHeightOutlined />}>
+                提示词列{collapsedCount > 0 ? `（已收起 ${collapsedCount}）` : ''}
+              </Button>
+            </Dropdown>
             <Button icon={<CopyOutlined />} onClick={handleSaveDraft}>
               保存草稿
             </Button>
@@ -854,12 +939,18 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
             选中单元格后：⌘+C 复制  ⌘+V 粘贴  Delete 清空
           </Text>
 
+          {collapsedWithTasks.length > 0 && (
+            <Text type="warning" style={{ fontSize: 12 }}>
+              已收起的 {collapsedWithTasks.length} 个提示词列中还有 {collapsedTaskCount} 篇配置，点击创建时会照常创建（点列头 + 号可展开核对）
+            </Text>
+          )}
+
           <Card size="small" style={{ background: '#f6ffed' }}>
             <Row gutter={16}>
               <Col>统计：共 {stats.totalCities} 个城市，{stats.totalArticles} 篇文章</Col>
               {filteredPromptTypes.map(type => (
                 <Col key={type.id}>
-                  {type.type}：{stats.typeStats[type.id] || 0} 篇
+                  {type.type}{collapsedTypes[type.id] ? '（已收起）' : ''}：{stats.typeStats[type.id] || 0} 篇
                 </Col>
               ))}
             </Row>
@@ -923,7 +1014,7 @@ function BatchTaskForm({ onSubmit, loading, hideCreatedTab = false }: { onSubmit
               { title: '城市', dataIndex: 'city', key: 'city' },
               { title: '文章总数', dataIndex: 'totalCount', key: 'totalCount' },
               ...promptTypes.map(type => ({
-                title: type.type,
+                title: collapsedTypes[type.id] ? `${type.type}（已收起，仍会创建）` : type.type,
                 key: type.id,
                 render: (_: any, record: BatchTaskRow) => {
                   const configs = record.promptTypeConfigs[type.id] || [];
