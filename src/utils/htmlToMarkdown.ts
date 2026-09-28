@@ -107,7 +107,16 @@ export const preloadHtmlToMarkdown = (): void => {
   });
 };
 
-/** 收尾清理：去 nbsp、统一列表缩进、压缩空行 */
+/** 把正文中裸出现的 http(s) 网址包成 GFM 自动链接 <url>
+ *  兜底逻辑：
+ *   - 只处理正文里的纯文本 URL，不改动 <a> 标签生成的 [文字](url) 与原有 <url>
+ *   - 自动跳过 ]( 与 < 与反引号 前面，避免重复包裹与破坏代码片段
+ *   - URL 字符集排除中文标点，让 URL 在中文标点处自然停下，避免错误吞掉后面的文本
+ *  这只在 Markdown 副本里生效，不修改原文章 HTML。
+ */
+const BARE_URL_RE = /(?<![\(\<\`])https?:\/\/[^\s<>。，：；！？、）」]+/g;
+
+/** 收尾清理：去 nbsp、统一列表缩进、压缩空行、自动包裹裸 URL */
 const tidy = (markdown: string): string =>
   markdown
     .replace(/\u00a0/g, ' ')
@@ -115,7 +124,8 @@ const tidy = (markdown: string): string =>
     .replace(/^(\s*)([-*+]|\d+\.)\s{2,}/gm, '$1$2 ') // turndown 默认列表缩进较宽，统一成“- ”“1. ”
     .replace(/\n{3,}/g, '\n\n')
     .replace(/\*\*\s*\*\*/g, '')
-    .replace(/^\s+|\s+$/g, '');
+    .replace(/^\s+|\s+$/g, '')
+    .replace(BARE_URL_RE, (m) => `<${m}>`);
 
 /** 把文章 HTML 转成 Markdown 文本 */
 export const htmlToMarkdown = async (html: string): Promise<string> => {
