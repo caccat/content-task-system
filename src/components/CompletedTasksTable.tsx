@@ -1,9 +1,9 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Table, Button, Modal, Input, DatePicker, Tag, Space, Tooltip, message, Typography } from 'antd';
 const { RangePicker } = DatePicker;
 import {
   EyeOutlined, CopyOutlined, LinkOutlined, ExportOutlined,
-  EditOutlined, CheckOutlined, CloseOutlined
+  EditOutlined, CheckOutlined, CloseOutlined, FileMarkdownOutlined
 } from '@ant-design/icons';
 import type { TaskWithArticles, Article, Prompt } from '../types';
 import { useTasks } from '../hooks/useSupabase';
@@ -69,6 +69,13 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
 
   // 文章预览弹窗
   const [previewArticle, setPreviewArticle] = useState<Article | null>(null);
+  const [copyingMarkdown, setCopyingMarkdown] = useState(false);
+
+  // 打开预览弹窗时预热 Markdown 转换库，这样点“复制Markdown”时不必再等下载
+  useEffect(() => {
+    if (!previewArticle) return;
+    import('../utils/htmlToMarkdown').then(({ preloadHtmlToMarkdown }) => preloadHtmlToMarkdown());
+  }, [previewArticle]);
 
   // 编辑状态
   const [editingCell, setEditingCell] = useState<{ articleId: string; field: string } | null>(null);
@@ -223,6 +230,31 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
     }).catch(() => {
       message.error('复制失败');
     });
+  };
+
+  // 复制 Markdown：把当前预览文章的 HTML 转成 Markdown 文本后复制
+  // 转换库在点击时才动态加载，不进首屏包；失败时不影响其他按钮
+  const handleCopyMarkdown = async () => {
+    const html = previewArticle?.content;
+    if (!html) {
+      message.warning('文章内容为空，无法转换');
+      return;
+    }
+    setCopyingMarkdown(true);
+    try {
+      const { htmlToMarkdown } = await import('../utils/htmlToMarkdown');
+      const markdown = await htmlToMarkdown(html);
+      if (!markdown.trim()) {
+        message.warning('转换结果为空');
+        return;
+      }
+      copyToClipboard(markdown, 'Markdown 已复制');
+    } catch (err) {
+      console.error('[copyMarkdown] 转换失败:', err);
+      message.error('Markdown 转换失败');
+    } finally {
+      setCopyingMarkdown(false);
+    }
   };
 
   // 导出 Excel
@@ -658,6 +690,15 @@ export default function CompletedTasksTable({ defaultStatus }: CompletedTasksTab
             if (previewArticle?.content) copyToClipboard(previewArticle.content, 'HTML内容已复制');
           }}>
             复制HTML
+          </Button>,
+          <Button
+            key="copy-markdown"
+            icon={<FileMarkdownOutlined />}
+            loading={copyingMarkdown}
+            disabled={!previewArticle?.content}
+            onClick={handleCopyMarkdown}
+          >
+            复制Markdown
           </Button>,
           <Button key="close" type="primary" onClick={() => setPreviewArticle(null)}>
             关闭
