@@ -9,7 +9,8 @@
  */
 
 type TurndownServiceLike = {
-  turndown: (html: string) => string;
+  // turndown 既接受 HTML 字符串，也接受 DOM 元素
+  turndown: (input: string | HTMLElement) => string;
   addRule: (key: string, rule: unknown) => void;
   use: (plugin: unknown) => void;
 };
