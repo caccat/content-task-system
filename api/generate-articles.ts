@@ -22,13 +22,21 @@ interface AiConfig {
   systemPrompt: string;
 }
 
-// 从 Supabase settings 表读 AI 配置（一次性拿所有 key）
+// 从 Supabase settings 表读 AI 配置
+// 注意：故意查全表（settings 表通常只有几十行），不用 PostgREST 的 in.() 语法，
+// 避免部分网关/WAF 对 URL 中括号+逗号的拦截导致静默失败
+interface SupabaseReadResult {
+  cfg: Partial<AiConfig>;
+  readError: string | null;
+  rowCount: number | null;
+}
+
 async function getAiConfigFromSupabase(
   supabaseUrl: string,
   supabaseKey: string
-): Promise<Partial<AiConfig>> {
+): Promise<SupabaseReadResult> {
   const response = await fetch(
-    `${supabaseUrl}/rest/v1/settings?key=in.(ai_api_key,ai_base_url,ai_model,ai_temperature,ai_max_tokens,ai_system_prompt)&select=key,value`,
+    `${supabaseUrl}/rest/v1/settings?select=key,value&limit=1000`,
     {
       headers: {
         apikey: supabaseKey,
@@ -38,7 +46,12 @@ async function getAiConfigFromSupabase(
   );
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+    const errText = await response.text().catch(() => '');
+    return {
+      cfg: {},
+      readError: `读 settings 失败 HTTP ${response.status}: ${errText.slice(0, 200)}`,
+      rowCount: null,
+    };
   }
 
   const rows = (await response.json()) as Array<{ key: string; value: string | null }>;
@@ -60,7 +73,8 @@ async function getAiConfigFromSupabase(
     if (!Number.isNaN(n) && n > 0) cfg.maxTokens = n;
   }
   if (map.ai_system_prompt) cfg.systemPrompt = map.ai_system_prompt;
-  return cfg;
+
+  return { cfg, readError: null, rowCount: rows.length };
 }
 
 // 合并：Supabase > env var > 默认
@@ -186,17 +200,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 读取 AI 配置：Supabase > env > 默认
-    const [supabaseCfg, envCfg] = await Promise.all([
-      getAiConfigFromSupabase(supabaseUrl, supabaseKey).catch((e) => {
-        console.warn('[generate-articles] 读 Supabase AI 配置失败，回退到 env/default:', e?.message);
-        return {} as Partial<AiConfig>;
-      }),
-      Promise.resolve({
-        apiKey: process.env.DEEPSEEK_API_KEY || process.env.VITE_DEEPSEEK_API_KEY,
-        baseUrl: process.env.AI_BASE_URL,
-        model: process.env.AI_MODEL,
-      } as Partial<AiConfig>),
-    ]);
+    // 注意：读失败时不再静默吞错，把错误带进响应，便于排查"改了不生效"
+    let supabaseCfg: Partial<AiConfig> = {};
+    let supabaseReadError: string | null = null;
+    let settingsRowCount: number | null = null;
+    try {
+      const r = await getAiConfigFromSupabase(supabaseUrl, supabaseKey);
+      supabaseCfg = r.cfg;
+      supabaseReadError = r.readError;
+      settingsRowCount = r.rowCount;
+      if (supabaseReadError) {
+        console.warn('[generate-articles] 读 Supabase AI 配置失败:', supabaseReadError);
+      }
+    } catch (e: any) {
+      supabaseReadError = e?.message || String(e);
+      console.warn('[generate-articles] 读 Supabase AI 配置异常:', supabaseReadError);
+    }
+
+    const envCfg: Partial<AiConfig> = {
+      apiKey: process.env.DEEPSEEK_API_KEY || process.env.VITE_DEEPSEEK_API_KEY,
+      baseUrl: process.env.AI_BASE_URL,
+      model: process.env.AI_MODEL,
+    };
     const cfg = mergeAiConfig(supabaseCfg, envCfg);
 
     if (!cfg.apiKey) {
@@ -255,6 +280,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         model: cfg.model,
         host: (() => { try { return new URL(cfg.baseUrl).host; } catch { return cfg.baseUrl; } })(),
         source: supabaseCfg.apiKey ? 'supabase' : (envCfg.apiKey ? 'env' : 'default'),
+        supabaseReadError,
+        settingsRowCount,
       },
     });
   } catch (error: any) {

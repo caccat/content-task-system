@@ -4,12 +4,11 @@ import {
   BellOutlined,
   ClockCircleOutlined,
   RobotOutlined,
-  EyeInvisibleOutlined,
-  EyeOutlined,
   ThunderboltOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   ApiOutlined,
+  SyncOutlined,
 } from '@ant-design/icons';
 import { useSettings } from '../hooks/useSettings';
 import dayjs from 'dayjs';
@@ -67,6 +66,8 @@ export default function Settings() {
     host?: string;
   } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<any>(null);
 
   // 加载已保存的设置
   useEffect(() => {
@@ -141,6 +142,29 @@ export default function Settings() {
     }
   };
 
+  // 检查后端实际读到的配置（诊断"保存了但还是 DeepSeek"）
+  const handleCheckBackend = async (silent = false) => {
+    setChecking(true);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const r = await fetch(`${apiUrl}/api/ai-config`, { cache: 'no-store' });
+      const data = await r.json();
+      setBackendStatus(data);
+      const src = data?.effective?.source;
+      if (!silent || src !== 'supabase') {
+        if (src === 'supabase') message.success('后端确认：正在使用 Supabase 里保存的配置');
+        else if (src === 'env') message.warning('后端回退到了环境变量，没有读到 Supabase 配置');
+        else if (src === 'none') message.error('后端没有读到任何可用的 AI 配置');
+        else message.warning('后端未返回可识别的生效来源，详见下方详情');
+      }
+    } catch (e: any) {
+      setBackendStatus({ error: e?.message || '请求失败' });
+      if (!silent) message.error('检查失败：' + (e?.message || '请求失败'));
+    } finally {
+      setChecking(false);
+    }
+  };
+
   // 保存
   const handleSave = async () => {
     if (!aiApiKey.trim()) {
@@ -162,8 +186,10 @@ export default function Settings() {
         setSetting('ai_max_tokens', String(aiMaxTokens)),
         setSetting('ai_system_prompt', aiSystemPrompt),
       ]);
-      message.success('AI 配置已保存，下次生成文章时生效');
+      message.success('AI 配置已保存');
       setTestResult(null);
+      // 保存后自动检查一次后端是否读到（避免"保存了但没生效"）
+      await handleCheckBackend(true);
     } catch (e: any) {
       message.error('保存失败：' + (e?.message || '未知错误'));
     } finally {
@@ -365,6 +391,57 @@ export default function Settings() {
             />
           )}
 
+          {backendStatus && (
+            <Alert
+              type={
+                backendStatus.effective?.source === 'supabase'
+                  ? 'success'
+                  : backendStatus.effective?.source === 'env'
+                    ? 'warning'
+                    : 'error'
+              }
+              showIcon
+              message={
+                backendStatus.effective
+                  ? `后端当前生效来源：${backendStatus.effective.source === 'supabase'
+                      ? 'Supabase 保存的配置 ✅'
+                      : backendStatus.effective.source === 'env'
+                        ? '环境变量（回退）⚠️'
+                        : '无可用配置 ❌'}`
+                  : '后端诊断信息'
+              }
+              description={
+                <div style={{ wordBreak: 'break-all', fontSize: 12 }}>
+                  {backendStatus.effective ? (
+                    <>
+                      <div>模型：<code>{backendStatus.effective.model}</code></div>
+                      <div>端点：<code>{backendStatus.effective.baseUrlHost}</code></div>
+                      <div style={{ marginTop: 4 }}>{backendStatus.effective.note}</div>
+                      {backendStatus.settings?.ai_api_key && (
+                        <div style={{ marginTop: 4, color: '#888' }}>
+                          Supabase 里的 Key：{backendStatus.settings.ai_api_key}
+                        </div>
+                      )}
+                      {backendStatus.settings?.readError && (
+                        <div style={{ marginTop: 4, color: '#cf1322' }}>
+                          读 settings 出错：{backendStatus.settings.readError}
+                        </div>
+                      )}
+                      <details style={{ marginTop: 8 }}>
+                        <summary style={{ cursor: 'pointer' }}>展开完整诊断 JSON</summary>
+                        <pre style={{ fontSize: 11, maxHeight: 320, overflow: 'auto', background: '#fafafa', padding: 8 }}>
+                          {JSON.stringify(backendStatus, null, 2)}
+                        </pre>
+                      </details>
+                    </>
+                  ) : (
+                    <pre style={{ fontSize: 11 }}>{JSON.stringify(backendStatus, null, 2)}</pre>
+                  )}
+                </div>
+              }
+            />
+          )}
+
           <Space>
             <Button
               type="primary"
@@ -373,6 +450,13 @@ export default function Settings() {
               loading={testing}
             >
               测试连接
+            </Button>
+            <Button
+              icon={<SyncOutlined />}
+              onClick={() => handleCheckBackend(false)}
+              loading={checking}
+            >
+              检查生效状态
             </Button>
             <Button
               type="primary"
