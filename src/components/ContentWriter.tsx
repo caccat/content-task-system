@@ -109,6 +109,18 @@ function getArticleTitle(taskId: string): string | null {
   return getArticleData(taskId).title;
 }
 
+// 批量生成弹窗里，一行表单的初始值
+// 优先级：数据库 user_title/extra_requirement > localStorage（兼容旧数据）> 默认值
+function buildBatchRow(task: TaskWithArticles) {
+  const dbTitle = (task as any).user_title || null;
+  const dbExtra = (task as any).extra_requirement || '';
+  const localData = getArticleData(task.id);
+  return {
+    title: dbTitle || localData.title || `${task.city}相关文章`,
+    extraRequirement: dbExtra || task.writing_suggestions || '',
+  };
+}
+
 // 批量生成标题编辑器子组件
 function BatchTitleEditor({ 
   tasks, 
@@ -123,18 +135,30 @@ function BatchTitleEditor({
   const [batchData, setBatchData] = useState<Record<string, { title: string; extraRequirement: string }>>(() => {
     const initial: Record<string, { title: string; extraRequirement: string }> = {};
     tasks.forEach((task) => {
-      // 优先读数据库，再读 localStorage（兼容旧数据），最后用默认值
-      const dbTitle = (task as any).user_title || null;
-      const dbExtra = (task as any).extra_requirement || '';
-      const localData = getArticleTitle(task.id);
-      
-      initial[task.id] = {
-        title: dbTitle || localData || `${task.city}相关文章`,
-        extraRequirement: dbExtra || task.writing_suggestions || '',
-      };
+      initial[task.id] = buildBatchRow(task);
     });
     return initial;
   });
+
+  // ⚠️ 关键修复：useState 的初始化函数只在组件首次挂载时执行一次。
+  // antd Modal 关闭时不会卸载内部子组件（destroyOnHidden 默认 false），
+  // 于是第二次打开弹窗、任务换成另一批时，batchData 里存的还是上一批的 task.id：
+  //   → 新任务那一行取不到值，输入框变空白
+  //   → 提交时被 `${city}相关文章` 兜底顶掉，用户填的标题被静默丢弃
+  // 这里只补齐"缺失的行"，不覆盖用户已经填好的内容。
+  useEffect(() => {
+    setBatchData((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      tasks.forEach((task) => {
+        if (next[task.id] === undefined) {
+          next[task.id] = buildBatchRow(task);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [tasks]);
 
   // 更新某个任务的数据
   const updateData = (taskId: string, field: 'title' | 'extraRequirement', value: string) => {
@@ -275,19 +299,25 @@ function BatchTitleEditor({
         block 
         style={{ marginTop: 16 }}
         onClick={() => {
-          const data = tasks.map(t => ({
-            title: batchData[t.id]?.title?.trim() || `${t.city}相关文章`,
-            extraRequirement: batchData[t.id]?.extraRequirement?.trim() || '',
-          }));
-          if (data.some(d => !d.title)) {
-            message.warning('请确保所有任务都填写了标题');
+          // ⚠️ 不再用 `${city}相关文章` 兜底：兜底会让"取不到值"静默变成默认标题，
+          // 用户填的标题被丢弃且没有任何提示。这里改为显式校验，并指出是哪几行没填。
+          const emptyCities: string[] = [];
+          const data = tasks.map(t => {
+            const title = batchData[t.id]?.title?.trim() || '';
+            if (!title) emptyCities.push(t.city);
+            return {
+              title,
+              extraRequirement: batchData[t.id]?.extraRequirement?.trim() || '',
+            };
+          });
+          if (emptyCities.length > 0) {
+            message.warning(`以下任务还没有标题，请先填写：${emptyCities.join('、')}`);
             return;
           }
-          // 保存每条数据到数据库
+          // 保存每条数据到数据库（用已 trim 的 data，保证与提交内容完全一致）
           if (onSaveData) {
-            tasks.forEach(t => {
-              const d = batchData[t.id];
-              if (d) onSaveData(t.id, d.title, d.extraRequirement);
+            tasks.forEach((t, i) => {
+              onSaveData(t.id, data[i].title, data[i].extraRequirement);
             });
           }
           onConfirm(data);
@@ -1893,9 +1923,9 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
               console.log('[generateWithAi] 正在保存到DB:', { taskId: task.id, userTitle, extraRequirement });
               await updateTaskFields(task.id, { user_title: userTitle, extra_requirement: extraRequirement });
               console.log('[generateWithAi] DB保存成功:', { taskId: task.id });
-            } catch (dbErr) {
+            } catch (dbErr: any) {
               console.error('[generateWithAi] DB保存失败（不影响生成）:', dbErr);
-              message.warning(`${task.city}: 标题/额外要求保存失败，请重试`);
+              message.warning(`${task.city}: 标题未能写入数据库（${dbErr?.message || dbErr}），下次"重新生成"会退回默认标题`);
             }
             // 更新状态为已完成
             await updateAiStatus(task.id, 'completed');
@@ -2141,6 +2171,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
       >
         {singleTask && (
           <SingleTaskEditor
+            key={singleTask.id}
             task={singleTask}
             onConfirm={async (title, extraRequirement) => {
               setSingleTaskModalVisible(false);
