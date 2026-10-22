@@ -201,6 +201,7 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
   const [mounted, setMounted] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // 历史记录状态
   const historyRef = useRef<HistoryState[]>([]);
@@ -235,21 +236,33 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
     if (editorRef.current && mounted && !isHtmlMode) {
       // 只在值与当前内容不同时更新，避免光标跳动
       // 撤销操作时不更新，避免覆盖撤销的内容
-      if (!isUndoingRef.current && editorRef.current.innerHTML !== value) {
+      // isConnected 防护：Modal 销毁等场景下节点可能已脱离文档，此时不再写入
+      if (!isUndoingRef.current && editorRef.current.isConnected && editorRef.current.innerHTML !== value) {
         console.log('[RichTextEditor] 设置 innerHTML, 长度:', value?.length || 0);
         editorRef.current.innerHTML = value;
       }
     } else if (mounted && !isHtmlMode && !editorRef.current) {
-      // editorRef 还没准备好，延迟重试
+      // editorRef 还没准备好，延迟重试（记录定时器，卸载时清理）
       console.log('[RichTextEditor] editorRef 未就绪，延迟重试');
-      setTimeout(() => {
-        if (editorRef.current && !isHtmlMode) {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        // isConnected：组件已卸载时 ref 为 null 或节点已脱离文档，直接跳过，避免污染 React 的 DOM 认知
+        if (editorRef.current?.isConnected && !isHtmlMode) {
           console.log('[RichTextEditor] 延迟重试成功，设置 innerHTML, 长度:', value?.length || 0);
           editorRef.current.innerHTML = value;
         }
       }, 100);
     }
   }, [value, mounted, isHtmlMode]);
+
+  // 卸载时清理待执行的定时器，避免组件销毁后仍操作已脱离文档的 DOM 节点
+  useEffect(() => {
+    return () => {
+      if (debouncedSaveRef.current) clearTimeout(debouncedSaveRef.current);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, []);
 
   // 保存历史记录（使用防抖，但保存最后一次）
   const saveToHistory = useCallback((content: string) => {

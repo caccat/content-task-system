@@ -27,6 +27,7 @@ import TaskPublisher from './components/TaskPublisher';
 import WebsiteManager from './components/WebsiteManager';
 import PromptManager from './components/PromptManager';
 import Settings from './components/Settings';
+import ErrorBoundary from './components/ErrorBoundary';
 import { supabase } from './supabase';
 import type { UserRole, TaskWithArticles, Task, Article } from './types';
 import dayjs from 'dayjs';
@@ -362,7 +363,18 @@ function App() {
     }
   };
 
+  // 当前页面唯一 key：渲染崩溃后切换菜单可重置错误边界，实现自动恢复
+  const activePageKey =
+    currentRole === 'creator'
+      ? `creator-${creatorSubPage}`
+      : currentRole === 'writer'
+        ? `writer-${writerSubPage}`
+        : currentRole === 'publisher'
+          ? `publisher-${publisherSubPage}`
+          : currentRole;
+
   return (
+    <ErrorBoundary>
     <>
       <style>{`
         /* 一级菜单（主菜单）样式 */
@@ -605,11 +617,14 @@ function App() {
       </Sider>
       <Layout style={{ background: 'rgba(255, 248, 220, 0.3)', padding: '32px' }}>
         <Content style={{ background: 'transparent', margin: 0, minHeight: 280 }}>
-          {renderContent()}
+          <ErrorBoundary key={activePageKey}>
+            {renderContent()}
+          </ErrorBoundary>
         </Content>
       </Layout>
     </Layout>
     </>
+    </ErrorBoundary>
   );
 }
 
