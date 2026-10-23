@@ -466,7 +466,12 @@ function App() {
           font-weight: 600 !important;
         }
       `}</style>
-      <Layout style={{ minHeight: '100vh', background: 'rgba(255, 248, 220, 0.25)' }}>
+      {/* translate="no" + notranslate：双重禁止浏览器/翻译扩展改写本应用 DOM，避免破坏 React Fiber 与 DOM 的对应关系 */}
+      <Layout
+        style={{ minHeight: '100vh', background: 'rgba(255, 248, 220, 0.25)' }}
+        translate="no"
+        className="notranslate"
+      >
       <Sider 
         width={260}
         collapsedWidth={72}

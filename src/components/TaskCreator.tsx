@@ -2239,7 +2239,17 @@ function CreateTaskPage() {
       message.success(`成功创建 ${tasks.length} 个任务！`);
       // 批量创建成功后，向飞书群发送一条汇总通知（通知失败不影响主流程）
       if (tasks.length > 0) {
-        sendBatchCreatedNotification(tasks).catch((err) => console.error('飞书群通知发送失败:', err));
+        sendBatchCreatedNotification(tasks).catch((err) => {
+          console.error('飞书群通知发送失败:', err);
+          const msg = err?.message || '';
+          // fetch 直接 reject（Failed to fetch / NetworkError）说明浏览器连不上服务端接口
+          const isNetworkError = !msg || /fetch|network/i.test(msg);
+          message.warning(
+            isNetworkError
+              ? '飞书群通知未发出：当前网络无法连接通知服务（任务已创建成功；如需通知可开启代理后重试）'
+              : `飞书群通知未发出：${msg}（任务已创建成功）`
+          );
+        });
       }
     } catch (error: any) {
       message.error('批量创建失败: ' + (error.message || '请检查数据库表是否已创建'));

@@ -1,10 +1,15 @@
 <!doctype html>
-<html lang="en">
+<!-- lang 必须为 zh-CN：此前为 en，导致 Chrome 误判页面语言并触发自动中文翻译，
+     翻译会替换/包裹 React 管理的文本节点，引发 insertBefore 崩溃（白屏） -->
+<html lang="zh-CN" translate="no">
   <head>
     <meta charset="UTF-8" />
+    <!-- 禁止 Google/Chrome 及各类翻译扩展翻译本页面 -->
+    <meta name="google" content="notranslate" />
+    <meta name="googlebot" content="notranslate" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>content-task-system</title>
+    <title>内容任务管理系统</title>
   </head>
   <body>
     <div id="root"></div>

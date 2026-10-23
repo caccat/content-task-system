@@ -46,12 +46,12 @@ function markdownToHtml(markdown: string): string {
   });
   
   // 处理标题
-  html = html.replace(/^###### (.*$)/gim, '<h6>$1</h6>');
-  html = html.replace(/^##### (.*$)/gim, '<h5>$1</h5>');
-  html = html.replace(/^#### (.*$)/gim, '<h4>$1</h4>');
-  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
-  html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+  // 说明：\s* 允许 "#" 后没有空格（AI 生成内容常见 "#澳大利亚"、"###第一步"），
+  // 旧正则要求 "# " 必须有空格，导致这些写法不被识别，# 会原样残留在正文里
+  html = html.replace(/^(#{1,6})\s*(.+)$/gm, (_m, hashes, titleText) => {
+    const level = Math.min(hashes.length, 6);
+    return `<h${level}>${titleText.trim()}</h${level}>`;
+  });
   
   // 处理加粗
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -168,25 +168,40 @@ function markdownToHtml(markdown: string): string {
   return html.trim();
 }
 
-// 检测是否为 Markdown 格式
+// 检测是否为 Markdown 源码
+// 说明：旧的"命中任意一条即判定"过于宽松，导致含 # / 编号 / 列表符的普通文章被误判为 Markdown，
+// 粘贴时丢弃剪贴板富文本、改走 Markdown 转换，最终把残留的 # 暴露在正文里。
+// 现在要求"强特征 ≥2"或"强特征 ≥1 且弱特征 ≥2"，只有真正的 Markdown 源码才会满足。
 function isMarkdown(text: string): boolean {
-  const markdownPatterns = [
-    /^#{1,6} /m,
-    /\*\*.*?\*\*/,
-    /\*.*?\*/,
-    /\[.*?\]\(.*?\)/,
-    /!\[.*?\]\(.*?\)/,
-    /^> /m,
-    /^[-*+] /m,
-    /^\d+\. /m,
-    /\|[^\n]+\|[^\n]*\|/,  // 表格，支持跨行
-    /```[\s\S]*?```/,
-    /`[^`]+`/,
-    /~~.*?~~/,
-    /^---$/m
+  if (!text || !text.trim()) return false;
+
+  // 决定性特征：代码块围栏几乎只出现在 Markdown 源码中，单独命中即可判定
+  // （AI 输出的代码块常单独出现，若按"需 2 个强特征"会被漏判）
+  if (/```[\s\S]*?```/.test(text)) return true;
+
+  // 强特征：Markdown 源码特有语法
+  const strongPatterns = [
+    /^#{1,6}\s+\S/m,                                   // 标题（# 后必须有空白，排除 "#澳大利亚" 这类无空格写法）
+    /^\s*\|[^\n]*\|\s*$/m,                             // 表格行（行首行尾均为 |）
+    /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/m, // 表格分隔线 |---|---|
+    /\[[^\]]+\]\([^)]+\)/,                             // 链接 [文字](url)
+    /!\[[^\]]*\]\([^)]+\)/,                            // 图片 ![alt](url)
   ];
-  
-  return markdownPatterns.some(pattern => pattern.test(text));
+
+  // 弱特征：中文文章里也常见，单独命中不足以判定
+  const weakPatterns = [
+    /\*\*[^*]+\*\*/,
+    /~~[^~]+~~/,
+    /^[-*+]\s+/m,
+    /^\d+\.\s+/m,
+    /^>\s+/m,
+    /`[^`\n]+`/,
+  ];
+
+  const strongHits = strongPatterns.filter((p) => p.test(text)).length;
+  const weakHits = weakPatterns.filter((p) => p.test(text)).length;
+
+  return strongHits >= 2 || (strongHits >= 1 && weakHits >= 2);
 }
 
 // 历史记录管理
@@ -364,33 +379,22 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
     const pastedHtml = e.clipboardData.getData('text/html');
     const pastedText = e.clipboardData.getData('text/plain');
     
-    // 如果有 HTML 内容且包含 Markdown 表格（| 字符），转换为 HTML
-    if (pastedHtml && pastedText.includes('|')) {
-      // 检查是否包含 Markdown 表格的特征（多行包含 |）
-      const lines = pastedText.split(/\r?\n/);
-      const hasTableRows = lines.some(line => line.includes('|') && line.split('|').length >= 3);
-      
-      if (hasTableRows && isMarkdown(pastedText)) {
-        e.preventDefault();
-        const htmlContent = markdownToHtml(pastedText);
-        document.execCommand('insertHTML', false, htmlContent);
-        
-        if (editorRef.current) {
-          const content = editorRef.current.innerHTML;
-          onChange(content);
-          saveToHistory(content);
-        }
-        message.success('Markdown 已自动转换为富文本格式');
-        return;
-      }
+    // 剪贴板是否自带富文本（例如从已渲染好的文章剪切而来）
+    const hasRichHtml = !!pastedHtml && /<[a-z][^>]*>/i.test(pastedHtml);
+    // 文本是否像 Markdown 源码（判定已收紧：普通文章不会被误判）
+    const looksLikeMarkdownSource = isMarkdown(pastedText);
+    
+    // 自带富文本、且不是 Markdown 源码：交给浏览器原生粘贴。
+    // 既完整保留原格式，也避免 execCommand('insertHTML') 重建 DOM
+    // 与 React fiber 失配引发 removeChild 崩溃。
+    if (hasRichHtml && !looksLikeMarkdownSource) {
+      return;
     }
     
-    // 纯文本检测
-    if (isMarkdown(pastedText)) {
+    // 确认是 Markdown 源码（标题/表格/代码块等）：转换为富文本后插入
+    if (looksLikeMarkdownSource) {
       e.preventDefault();
       const htmlContent = markdownToHtml(pastedText);
-      
-      // 插入 HTML
       document.execCommand('insertHTML', false, htmlContent);
       
       if (editorRef.current) {
@@ -399,7 +403,10 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
         saveToHistory(content);
       }
       message.success('Markdown 已自动转换为富文本格式');
+      return;
     }
+    
+    // 其余情况（纯文本粘贴等）：保持浏览器默认行为
   }, [onChange, saveToHistory]);
 
   // 处理输入
