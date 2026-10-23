@@ -17,191 +17,12 @@ import {
   ArrowLeftOutlined,
   ArrowRightOutlined
 } from '@ant-design/icons';
+import { markdownToHtml, isMarkdown, countMarkdownHeadings, htmlToPlainText } from '../utils/markdown';
 
 interface RichTextEditorProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
-}
-
-// 将 Markdown 转换为 HTML
-function markdownToHtml(markdown: string): string {
-  let html = markdown;
-  
-  // 标准化换行符（Windows 的 \r\n 转为 \n）
-  html = html.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  
-  // 处理代码块
-  const codeBlocks: string[] = [];
-  html = html.replace(/```([\s\S]*?)```/g, (match) => {
-    codeBlocks.push(match);
-    return `<!--CODE_BLOCK_${codeBlocks.length - 1}-->`;
-  });
-  
-  // 处理行内代码
-  const inlineCodes: string[] = [];
-  html = html.replace(/`([^`]+)`/g, (match, code) => {
-    inlineCodes.push(code);
-    return `<!--INLINE_CODE_${inlineCodes.length - 1}-->`;
-  });
-  
-  // 处理标题
-  // 说明：\s* 允许 "#" 后没有空格（AI 生成内容常见 "#澳大利亚"、"###第一步"），
-  // 旧正则要求 "# " 必须有空格，导致这些写法不被识别，# 会原样残留在正文里
-  html = html.replace(/^(#{1,6})\s*(.+)$/gm, (_m, hashes, titleText) => {
-    const level = Math.min(hashes.length, 6);
-    return `<h${level}>${titleText.trim()}</h${level}>`;
-  });
-  
-  // 处理加粗
-  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/__(.*?)__/g, '<strong>$1</strong>');
-  
-  // 处理斜体
-  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  html = html.replace(/_(.*?)_/g, '<em>$1</em>');
-  
-  // 处理删除线
-  html = html.replace(/~~(.*?)~~/g, '<s>$1</s>');
-  
-  // 处理链接
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
-  
-  // 处理图片
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%">');
-  
-  // 处理引用
-  html = html.replace(/^> (.*$)/gim, '<blockquote style="border-left:4px solid #ddd;padding-left:16px;margin:16px 0;color:#666;">$1</blockquote>');
-  
-  // 处理水平线
-  html = html.replace(/^---$/gim, '<hr>');
-  
-  // 处理表格（兼容 Windows 的 \r\n 换行符）
-  const tableRegex = /\|(.+)\|\r?\n\|[-:\|\s]+\|\r?\n((?:\|.+\|\r?\n?)+)/g;
-  html = html.replace(tableRegex, (match, header, rows) => {
-    const headers = header.split('|').map((h: string) => h.trim()).filter((h: string) => h);
-    const rowLines = rows.trim().split('\n');
-    
-    let tableHtml = '<table style="width:100%;border-collapse:collapse;margin:16px 0;"><thead><tr>';
-    headers.forEach((h: string) => {
-      tableHtml += `<th style="border:1px solid #ddd;padding:8px;background:#f5f5f5;text-align:left;">${h}</th>`;
-    });
-    tableHtml += '</tr></thead><tbody>';
-    
-    rowLines.forEach((line: string) => {
-      const cells = line.split('|').map((c: string) => c.trim()).filter((c: string) => c);
-      if (cells.length > 0) {
-        tableHtml += '<tr>';
-        cells.forEach((c: string) => {
-          tableHtml += `<td style="border:1px solid #ddd;padding:8px;">${c}</td>`;
-        });
-        tableHtml += '</tr>';
-      }
-    });
-    
-    tableHtml += '</tbody></table>';
-    return tableHtml;
-  });
-  
-  // 处理无序列表
-  html = html.replace(/^(\s*)[-*+] (.*$)/gim, '$1<li>$2</li>');
-  // 处理有序列表
-  html = html.replace(/^(\s*)\d+\. (.*$)/gim, '$1<li>$2</li>');
-  
-  // 合并列表项
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => {
-    return `<ul style="margin:8px 0;padding-left:24px;">${match}</ul>`;
-  });
-  html = html.replace(/<\/ul>\s*<ul[^>]*>/g, '');
-  
-  // 处理段落
-  const lines = html.split('\n');
-  let result: string[] = [];
-  let inParagraph = false;
-  
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      if (inParagraph) {
-        result.push('</p>');
-        inParagraph = false;
-      }
-    } else if (trimmed.startsWith('<') && !trimmed.startsWith('<li>')) {
-      if (inParagraph) {
-        result.push('</p>');
-        inParagraph = false;
-      }
-      result.push(line);
-    } else if (trimmed.startsWith('<li>')) {
-      if (inParagraph) {
-        result.push('</p>');
-        inParagraph = false;
-      }
-      result.push(line);
-    } else {
-      if (!inParagraph) {
-        result.push('<p style="margin:8px 0;line-height:1.6;">');
-        inParagraph = true;
-      }
-      result.push(line);
-    }
-  }
-  if (inParagraph) {
-    result.push('</p>');
-  }
-  
-  html = result.join('\n');
-  
-  // 恢复代码块
-  codeBlocks.forEach((code, i) => {
-    const content = code.replace(/```/g, '').trim();
-    html = html.replace(`<!--CODE_BLOCK_${i}-->`, `<pre style="background:#f5f5f5;padding:12px;border-radius:4px;overflow:auto;font-family:monospace;">${content}</pre>`);
-  });
-  
-  // 恢复行内代码
-  inlineCodes.forEach((code, i) => {
-    html = html.replace(`<!--INLINE_CODE_${i}-->`, `<code style="background:#f5f5f5;padding:2px 6px;border-radius:3px;font-family:monospace;">${code}</code>`);
-  });
-  
-  html = html.replace(/<p><\/p>/g, '');
-  
-  return html.trim();
-}
-
-// 检测是否为 Markdown 源码
-// 说明：旧的"命中任意一条即判定"过于宽松，导致含 # / 编号 / 列表符的普通文章被误判为 Markdown，
-// 粘贴时丢弃剪贴板富文本、改走 Markdown 转换，最终把残留的 # 暴露在正文里。
-// 现在要求"强特征 ≥2"或"强特征 ≥1 且弱特征 ≥2"，只有真正的 Markdown 源码才会满足。
-function isMarkdown(text: string): boolean {
-  if (!text || !text.trim()) return false;
-
-  // 决定性特征：代码块围栏几乎只出现在 Markdown 源码中，单独命中即可判定
-  // （AI 输出的代码块常单独出现，若按"需 2 个强特征"会被漏判）
-  if (/```[\s\S]*?```/.test(text)) return true;
-
-  // 强特征：Markdown 源码特有语法
-  const strongPatterns = [
-    /^#{1,6}\s+\S/m,                                   // 标题（# 后必须有空白，排除 "#澳大利亚" 这类无空格写法）
-    /^\s*\|[^\n]*\|\s*$/m,                             // 表格行（行首行尾均为 |）
-    /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/m, // 表格分隔线 |---|---|
-    /\[[^\]]+\]\([^)]+\)/,                             // 链接 [文字](url)
-    /!\[[^\]]*\]\([^)]+\)/,                            // 图片 ![alt](url)
-  ];
-
-  // 弱特征：中文文章里也常见，单独命中不足以判定
-  const weakPatterns = [
-    /\*\*[^*]+\*\*/,
-    /~~[^~]+~~/,
-    /^[-*+]\s+/m,
-    /^\d+\.\s+/m,
-    /^>\s+/m,
-    /`[^`\n]+`/,
-  ];
-
-  const strongHits = strongPatterns.filter((p) => p.test(text)).length;
-  const weakHits = weakPatterns.filter((p) => p.test(text)).length;
-
-  return strongHits >= 2 || (strongHits >= 1 && weakHits >= 2);
 }
 
 // 历史记录管理
@@ -223,10 +44,26 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
   const historyIndexRef = useRef(-1);
   const isUndoingRef = useRef(false);
   const lastSaveTimeRef = useRef(0);
+  // 记录已做过 Markdown 兜底转换的内容，避免重复转换
+  const convertedValueRef = useRef<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // 兜底：历史数据里以 Markdown 源码存储的文章（或被 <p>/<br> 包裹的 Markdown 标记），
+  // 打开时自动转成富文本标题，避免正文里出现裸露的 #
+  useEffect(() => {
+    if (!mounted || !value || convertedValueRef.current === value) return;
+    const plain = htmlToPlainText(value);
+    if (countMarkdownHeadings(plain) >= 2 || isMarkdown(plain)) {
+      convertedValueRef.current = value;
+      const html = markdownToHtml(plain);
+      console.log('[RichTextEditor] 检测到 Markdown 标记，自动转换为富文本');
+      onChange(html);
+      message.info('检测到 Markdown 标记，已自动转换为富文本标题');
+    }
+  }, [mounted, value, onChange]);
 
   // 初始化历史记录
   useEffect(() => {

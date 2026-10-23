@@ -9,24 +9,11 @@ import type { TaskWithArticles, Article } from '../types';
 import { CITIES } from '../types';
 import dayjs from 'dayjs';
 import RichTextEditor from './RichTextEditor';
+import { normalizeArticleContent } from '../utils/markdown';
 
 const { Text, Title } = Typography;
 const { TabPane } = Tabs;
 
-// 将换行符转换为 HTML 标签
-function convertNewlinesToHtml(text: string): string {
-  if (!text) return '';
-  // 先按双换行分割段落，再按单换行转<br>
-  const paragraphs = text.split(/\n\n+/);
-  const htmlParagraphs = paragraphs.map(p => {
-    const trimmed = p.trim();
-    if (!trimmed) return '';
-    // 将单换行替换为 <br>
-    const withBreaks = trimmed.replace(/\n/g, '<br>');
-    return `<p style="margin:8px 0;line-height:1.6;">${withBreaks}</p>`;
-  }).filter(Boolean);
-  return htmlParagraphs.join('');
-}
 
 // localStorage 存取标题和额外要求（仅限用户浏览器）
 const ARTICLE_DATA_KEY = 'content_task_article_data';
@@ -1870,7 +1857,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
               const { error: updateErr } = await supabase
                 .from('articles')
                 .update({
-                  content: convertNewlinesToHtml(articleContent),
+                  content: normalizeArticleContent(articleContent),
                   status: 'draft',
                   updated_at: new Date().toISOString(),
                 })
@@ -1901,7 +1888,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                 await supabase
                   .from('articles')
                   .update({
-                    content: convertNewlinesToHtml(articleContent),
+                    content: normalizeArticleContent(articleContent),
                     status: 'draft',
                     updated_at: new Date().toISOString(),
                   })
@@ -2066,7 +2053,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
             await supabase
               .from('articles')
               .update({
-                content: convertNewlinesToHtml(content),
+                content: normalizeArticleContent(content),
                 status: 'draft',
                 updated_at: new Date().toISOString(),
               })
@@ -2253,7 +2240,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                         const { error } = await supabase
                           .from('articles')
                           .update({
-                            content: convertNewlinesToHtml(content),
+                            content: normalizeArticleContent(content),
                             status: 'draft',
                             updated_at: new Date().toISOString(),
                           })
@@ -2285,7 +2272,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                           await supabase
                             .from('articles')
                             .update({
-                              content: convertNewlinesToHtml(content),
+                              content: normalizeArticleContent(content),
                               status: 'draft',
                               updated_at: new Date().toISOString(),
                             })
