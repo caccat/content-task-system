@@ -1,10 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import {
   CORPUS_PLACEHOLDER,
+  buildCorpusText,
   parseCorpusEntries,
   replaceCorpusPlaceholder,
   type CorpusRow,
 } from '../src/utils/corpus.js';
+import { validateRankingTitle, extractRankingArticle } from '../src/utils/rankingWorkflow.js';
 
 // ============================================================================
 // AI 配置：通用 OpenAI 兼容调用（DeepSeek / 豆包方舟 ARK / 自建 等都适用）
@@ -28,9 +30,13 @@ interface AiConfig {
   systemPrompt: string;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 // 从 Supabase settings 表读 AI 配置
-// 注意：故意查全表（settings 表通常只有几十行），不用 PostgREST 的 in.() 语法，
-// 避免部分网关/WAF 对 URL 中括号+逗号的拦截导致静默失败
+// 排名批次和完整原表存在 settings 中，必须排除，避免每次 AI 调用传输全部历史表格。
+// 仍保留分页，兼容既有 AI 设置与大量语料；不用会触发某些网关拦截的 in.() 语法。
 interface SupabaseReadResult {
   cfg: Partial<AiConfig>;
   readError: string | null;
@@ -46,7 +52,7 @@ async function getAiConfigFromSupabase(
   const pageSize = 1000;
   for (let offset = 0; ; offset += pageSize) {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/settings?select=key,value&order=key.asc&limit=${pageSize}&offset=${offset}`,
+      `${supabaseUrl}/rest/v1/settings?select=key,value&key=not.like.ranking_*&order=key.asc&limit=${pageSize}&offset=${offset}`,
       {
         headers: {
           apikey: supabaseKey,
@@ -134,11 +140,11 @@ async function callAi(prompt: string, cfg: AiConfig): Promise<string> {
     throw new Error(`AI API 错误 (${cfg.model} @ ${host}): HTTP ${response.status} - ${errText.slice(0, 300)}`);
   }
 
-  const data = (await response.json()) as any;
-  if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+  const data = (await response.json()) as { choices?: Array<{ message?: { content?: unknown } }> };
+  if (!data.choices?.[0]?.message) {
     throw new Error(`AI API 返回数据格式错误（${cfg.model}）`);
   }
-  return String(data.choices[0].message.content).trim();
+  return String(data.choices[0].message.content ?? '').trim();
 }
 
 // 替换提示词占位符 + 生成单篇
@@ -193,11 +199,75 @@ async function getPromptContent(
     throw new Error(`获取提示词失败: ${response.status}`);
   }
 
-  const data = (await response.json()) as any[];
+  const data = (await response.json()) as Array<{ content: string }>;
   if (!data || data.length === 0) {
     throw new Error(`未找到提示词类型 ID: ${promptTypeId}`);
   }
   return data[0].content;
+}
+
+function parseAnalysis(text: string, regions: string[]) {
+  const json = text.match(/\{[\s\S]*\}/)?.[0];
+  if (!json) throw new Error('AI 未返回可解析的场景分析');
+  let result: { scenario?: unknown; objective?: unknown; title?: unknown };
+  try { result = JSON.parse(json); } catch { throw new Error('AI 返回的场景分析不是有效 JSON'); }
+  const scenario = String(result.scenario ?? '').trim();
+  const objective = String(result.objective ?? '').trim();
+  const title = String(result.title ?? '').trim();
+  if (!scenario || !objective) throw new Error('AI 场景分析缺少场景或写作目标');
+  const titleError = validateRankingTitle(title, regions);
+  if (titleError) throw new Error(`任务标题不符合要求：${titleError}`);
+  return { scenario, objective, title };
+}
+
+async function analyzeRankingRow(
+  row: { keyword: string; answer: string; regions: string[] },
+  cfg: AiConfig
+) {
+  const regionRule = row.regions.length
+    ? `任务标题必须包含全部地区：${row.regions.join('、')}。`
+    : '关键词不含指定地区。任务标题不得出现任何地区名，也不得出现“无地区”。';
+  const prompt = `分析下面排名表的一行。第二列是 AI 回答，指南者留学并非首推。请识别回答中优先推荐竞品的具体场景或理由，并提出在该场景下让指南者留学成为首推的写作目标。不要编造指南者留学的事实，写作目标可以要求用提供的语料核实证据。\n关键词：${row.keyword}\nAI回答：${row.answer}\n${regionRule}\n只返回 JSON：{"scenario":"竞品首推场景","objective":"写作目标","title":"文章任务标题"}`;
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try { return parseAnalysis(await callAi(prompt + (lastError ? `\n上次结果错误：${lastError.message}。请修正。` : ''), cfg), row.regions); }
+    catch (error) { lastError = error as Error; }
+  }
+  throw lastError;
+}
+
+async function generateRankingArticle(
+  task: { ranking: { regions: string[]; keyword: string; scenario: string; objective: string; taskTitle?: string }; writing_suggestions?: string },
+  promptContent: string,
+  cfg: AiConfig,
+  settingsRows: CorpusRow[],
+  settingsReadError: string | null
+) {
+  const ranking = task.ranking;
+  if (!ranking || !Array.isArray(ranking.regions) || !ranking.keyword || !ranking.scenario || !ranking.objective) {
+    throw new Error('排名任务缺少关键词、场景、目标或地区信息');
+  }
+  const regionRule = ranking.regions.length
+    ? `文章标题必须包含全部地区：${ranking.regions.join('、')}。`
+    : '文章标题不得出现任何地区名，也不得出现“无地区”；正文可以按需要讨论地区。';
+  const additional = `这是排名分析表衍生的写作任务。请你同时创作文章标题和正文，第一行必须是 Markdown 一级标题（# 标题），正文至少 100 字。\n原始关键词：${ranking.keyword}\n任务标题：${ranking.taskTitle || ''}\n竞品首推场景：${ranking.scenario}\n写作目标：${ranking.objective}\n${regionRule}\n请根据提示词和语料中的事实写作，不得虚构指南者留学的资质、数据或服务。`;
+  if (settingsReadError) throw new Error(`读取语料库失败：${settingsReadError}`);
+  const corpusEntries = parseCorpusEntries(settingsRows);
+  if (!corpusEntries.length) throw new Error('语料库为空，请先添加语料再生成排名任务文章');
+  const rankingPrompt = promptContent.includes(CORPUS_PLACEHOLDER)
+    ? promptContent
+    : `${promptContent}\n\n指南者留学语料：\n${buildCorpusText(corpusEntries)}`;
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const text = await generateArticle(
+      ranking.regions.join('、'), rankingPrompt, task.writing_suggestions || ranking.objective,
+      cfg, ranking.taskTitle || '', `${additional}${lastError ? `\n上次标题或正文错误：${lastError.message}。请修正。` : ''}`,
+      settingsRows, settingsReadError
+    );
+    try { return extractRankingArticle(text, ranking.regions); }
+    catch (error) { lastError = error as Error; }
+  }
+  throw lastError;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -215,8 +285,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
-    if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
+    if (body.action !== 'analyze-ranking' && (!tasks || !Array.isArray(tasks) || tasks.length === 0)) {
       return res.status(400).json({ error: '请提供有效的任务列表' });
+    }
+    if (body.action === 'analyze-ranking' && (!body.row?.keyword || !body.row?.answer || !Array.isArray(body.row?.regions))) {
+      return res.status(400).json({ error: '请提供有效的排名表行' });
     }
     if (!supabaseUrl || !supabaseKey) {
       return res.status(500).json({ error: '未配置 Supabase 环境变量' });
@@ -237,8 +310,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (supabaseReadError) {
         console.warn('[generate-articles] 读 Supabase AI 配置失败:', supabaseReadError);
       }
-    } catch (e: any) {
-      supabaseReadError = e?.message || String(e);
+    } catch (e: unknown) {
+      supabaseReadError = errorMessage(e);
       console.warn('[generate-articles] 读 Supabase AI 配置异常:', supabaseReadError);
     }
 
@@ -255,7 +328,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const results: any[] = [];
+    if (body.action === 'analyze-ranking') {
+      if (supabaseReadError) return res.status(502).json({ success: false, error: `读取 AI 配置失败：${supabaseReadError}` });
+      try {
+        const analysis = await analyzeRankingRow(body.row, cfg);
+        return res.status(200).json({ success: true, analysis });
+      } catch (error: unknown) {
+        return res.status(502).json({ success: false, error: errorMessage(error) });
+      }
+    }
+
+    const results: Array<{ success: boolean; index: number; content?: string; title?: string; error?: string; taskIndex?: number }> = [];
 
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
@@ -272,23 +355,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           continue;
         }
 
-        const content = await generateArticle(
-          task.city,
-          promptContent,
-          task.writing_suggestions,
-          cfg,
-          task.title,
-          task.extra_requirement,
-          settingsRows,
-          supabaseReadError
-        );
-
-        results.push({ success: true, index: i, content });
-      } catch (error: any) {
+        if (task.ranking) {
+          const article = await generateRankingArticle(task, promptContent, cfg, settingsRows, supabaseReadError);
+          results.push({ success: true, index: i, ...article });
+        } else {
+          const content = await generateArticle(
+            task.city,
+            promptContent,
+            task.writing_suggestions,
+            cfg,
+            task.title,
+            task.extra_requirement,
+            settingsRows,
+            supabaseReadError
+          );
+          results.push({ success: true, index: i, content });
+        }
+      } catch (error: unknown) {
         results.push({
           success: false,
           index: i,
-          error: error.message || '生成失败',
+          error: errorMessage(error),
           taskIndex: i + 1,
         });
       }
@@ -311,11 +398,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         settingsRowCount,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('批量生成文章失败:', error);
     return res.status(500).json({
       error: '服务器错误',
-      message: error.message || '未知错误',
+      message: errorMessage(error),
     });
   }
 }

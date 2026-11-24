@@ -27,6 +27,7 @@ import TaskPublisher from './components/TaskPublisher';
 import WebsiteManager from './components/WebsiteManager';
 import PromptManager from './components/PromptManager';
 import CorpusManager from './components/CorpusManager';
+import RankingImport from './components/RankingImport';
 import Settings from './components/Settings';
 import ErrorBoundary from './components/ErrorBoundary';
 import { supabase } from './supabase';
@@ -39,7 +40,7 @@ const { Title, Paragraph } = Typography;
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
 // 子页面类型
-type CreatorSubPage = 'create' | 'created' | 'websites' | 'overdue';
+type CreatorSubPage = 'create' | 'ranking' | 'created' | 'websites' | 'overdue';
 type WriterSubPage = 'prompts' | 'corpus' | 'draft' | 'ready' | 'completed';
 type PublisherSubPage = 'tasks' | 'ready' | 'completed';
 type SettingsSubPage = 'general' | 'notifications';
@@ -222,6 +223,11 @@ function App() {
           label: '已创建',
         },
         {
+          key: 'creator-ranking',
+          icon: <FileTextOutlined />,
+          label: '上传排名分析表',
+        },
+        {
           key: 'creator-websites',
           icon: <SettingOutlined />,
           label: '发布网站管理',
@@ -331,6 +337,8 @@ function App() {
             return <TaskCreator defaultView="create" />;
           case 'created':
             return <TaskCreator defaultView="created" />;
+          case 'ranking':
+            return <RankingImport />;
           case 'websites':
             return <WebsiteManager />;
           case 'overdue':

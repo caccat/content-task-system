@@ -12,7 +12,9 @@ type TaskInput = {
 
 type ApiResult = {
   success: boolean;
-  results: Array<{ success: boolean; content?: string; error?: string }>;
+  results: Array<{ success: boolean; content?: string; title?: string; error?: string }>;
+  analysis?: { scenario: string; objective: string; title: string };
+  error?: string;
   ai?: { supabaseReadError?: string | null };
 };
 
@@ -24,7 +26,7 @@ const taskInput: TaskInput = {
   extra_requirement: '语气简洁',
 };
 
-async function invokeWithFetch(mockFetch: typeof fetch): Promise<{ status: number; body: ApiResult }> {
+async function invokeWithFetch(mockFetch: typeof fetch, requestBody: Record<string, unknown> = { tasks: [taskInput] }): Promise<{ status: number; body: ApiResult }> {
   const originalFetch = globalThis.fetch;
   const originalEnv = {
     SUPABASE_URL: process.env.SUPABASE_URL,
@@ -45,7 +47,7 @@ async function invokeWithFetch(mockFetch: typeof fetch): Promise<{ status: numbe
   };
 
   try {
-    await handler({ method: 'POST', body: { tasks: [taskInput] } } as never, response as never);
+    await handler({ method: 'POST', body: requestBody } as never, response as never);
     assert.ok(body);
     return { status, body };
   } finally {
@@ -69,6 +71,7 @@ test('sends the prompt, title and every corpus entry to the AI endpoint', async 
   const result = await invokeWithFetch(async (input, init) => {
     const url = String(input);
     if (url.includes('/rest/v1/settings?')) {
+      assert.match(url, /key=not\.like\.ranking_\*/);
       return settingsResponse([
         { key: 'corpus_entry_a', value: JSON.stringify({ title: '品牌介绍', content: '指南者留学品牌信息' }) },
         { key: 'corpus_entry_b', value: JSON.stringify({ title: '服务', content: '指南者留学服务信息' }) },
@@ -163,4 +166,86 @@ test('loads corpus entries beyond the first settings page', async () => {
   assert.equal(result.body.success, true);
   assert.deepEqual(offsets, [0, 1000]);
   assert.match(sentPrompt, /后页内容/);
+});
+
+test('analyzes each ranking row and corrects a title missing the required region', async () => {
+  let aiCalls = 0;
+  const result = await invokeWithFetch(async input => {
+    const url = String(input);
+    if (url.includes('/rest/v1/settings?')) return settingsResponse([]);
+    aiCalls++;
+    return Response.json({ choices: [{ message: { content: JSON.stringify({ scenario: '老牌口碑', objective: '突出指南者可验证的服务优势', title: aiCalls === 1 ? '留学机构推荐' : '上海留学机构推荐任务' }) } }] });
+  }, { action: 'analyze-ranking', row: { keyword: '上海留学机构', answer: '老牌机构首推', regions: ['上海'] } });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.analysis?.title, '上海留学机构推荐任务');
+  assert.equal(aiCalls, 2);
+});
+
+test('ranking analysis exposes settings outages instead of using a silent fallback', async () => {
+  let aiCalls = 0;
+  const result = await invokeWithFetch(async input => {
+    if (String(input).includes('/rest/v1/settings?')) return new Response('down', { status: 503 });
+    aiCalls++;
+    return Response.json({ choices: [{ message: { content: '{}' } }] });
+  }, { action: 'analyze-ranking', row: { keyword: '上海留学机构', answer: '老牌机构', regions: ['上海'] } });
+  assert.equal(result.status, 502);
+  assert.match(result.body.error || '', /读取 AI 配置失败.*503/);
+  assert.equal(aiCalls, 0);
+});
+
+test('ranking generation appends the whole corpus without a placeholder and generates a title', async () => {
+  let sentPrompt = '';
+  const result = await invokeWithFetch(async (input, init) => {
+    const url = String(input);
+    if (url.includes('/rest/v1/settings?')) return settingsResponse([{ key: 'corpus_entry_a', value: JSON.stringify({ title: '品牌', content: '指南者真实资料' }) }]);
+    if (url.includes('/rest/v1/prompts?')) return Response.json([{ content: '请写一篇有依据的文章' }]);
+    sentPrompt = (JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> }).messages[1].content;
+    return Response.json({ choices: [{ message: { content: `# 上海留学机构如何选\n\n${'这里是正文。'.repeat(30)}` } }] });
+  }, { tasks: [{ city: '上海', prompt_type: 'prompt-1', writing_suggestions: '', ranking: { keyword: '上海留学', scenario: '老牌口碑', objective: '指南者首推', regions: ['上海'], taskTitle: '上海老牌机构' } }] });
+  assert.equal(result.body.success, true);
+  assert.equal(result.body.results[0].title, '上海留学机构如何选');
+  assert.match(sentPrompt, /指南者真实资料/);
+  assert.match(sentPrompt, /老牌口碑/);
+  assert.match(sentPrompt, /指南者首推/);
+});
+
+test('ranking generation uses existing corpus placeholder without appending a duplicate', async () => {
+  let sentPrompt = '';
+  const result = await invokeWithFetch(async (input, init) => {
+    const url = String(input);
+    if (url.includes('/rest/v1/settings?')) return settingsResponse([{ key: 'corpus_entry_a', value: JSON.stringify({ title: '品牌', content: '唯一语料内容' }) }]);
+    if (url.includes('/rest/v1/prompts?')) return Response.json([{ content: '参考：{{语料}}' }]);
+    sentPrompt = (JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> }).messages[1].content;
+    return Response.json({ choices: [{ message: { content: `# 留学机构如何选\n\n${'正文内容。'.repeat(30)}` } }] });
+  }, { tasks: [{ city: '无地区', prompt_type: 'prompt-1', ranking: { keyword: '留学机构', scenario: '口碑', objective: '指南者首推', regions: [] } }] });
+  assert.equal(result.body.success, true);
+  assert.equal(sentPrompt.match(/唯一语料内容/g)?.length, 1);
+});
+
+test('no-region ranking task rejects region-bearing AI titles and reports failure', async () => {
+  let aiCalls = 0;
+  const result = await invokeWithFetch(async input => {
+    const url = String(input);
+    if (url.includes('/rest/v1/settings?')) return settingsResponse([{ key: 'corpus_entry_a', value: JSON.stringify({ title: '品牌', content: '指南者真实资料' }) }]);
+    if (url.includes('/rest/v1/prompts?')) return Response.json([{ content: '{{语料}}' }]);
+    aiCalls++;
+    return Response.json({ choices: [{ message: { content: `# 上海留学机构如何选\n\n${'这里是正文。'.repeat(30)}` } }] });
+  }, { tasks: [{ city: '无地区', prompt_type: 'prompt-1', ranking: { keyword: '留学机构', scenario: '口碑', objective: '指南者首推', regions: [] } }] });
+  assert.equal(result.body.success, false);
+  assert.match(result.body.results[0].error || '', /出现地区/);
+  assert.equal(aiCalls, 3);
+});
+
+test('ranking generation exposes missing corpus instead of silently generating', async () => {
+  let aiCalls = 0;
+  const result = await invokeWithFetch(async input => {
+    const url = String(input);
+    if (url.includes('/rest/v1/settings?')) return settingsResponse([]);
+    if (url.includes('/rest/v1/prompts?')) return Response.json([{ content: '普通提示词' }]);
+    aiCalls++;
+    return Response.json({ choices: [{ message: { content: '不应调用' } }] });
+  }, { tasks: [{ city: '上海', prompt_type: 'prompt-1', ranking: { keyword: '上海留学', scenario: '口碑', objective: '指南者首推', regions: ['上海'] } }] });
+  assert.equal(result.body.success, false);
+  assert.match(result.body.results[0].error || '', /语料库为空/);
+  assert.equal(aiCalls, 0);
 });

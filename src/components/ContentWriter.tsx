@@ -11,6 +11,7 @@ import { CITIES } from '../types';
 import dayjs from 'dayjs';
 import RichTextEditor from './RichTextEditor';
 import { normalizeArticleContent } from '../utils/markdown';
+import { isRankingTask, retryRankingTask } from '../services/rankingTasks';
 
 const { Text, Title } = Typography;
 const { TabPane } = Tabs;
@@ -1194,6 +1195,7 @@ function AiGenerateSection({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Space>
             <Text strong style={{ fontSize: 16 }}>{task.city}</Text>
+            {isRankingTask(task.created_by) && <Tag color="purple">排名分析表</Tag>}
             {getWebsiteLabels(task.websites).map((site, idx) => (
               <Tag key={idx} color="green">{site}</Tag>
             ))}
@@ -1205,6 +1207,7 @@ function AiGenerateSection({
           文章数：{task.quantity} | 
           截止：{dayjs(task.deadline).format('YYYY-MM-DD')}
         </Text>
+        {isRankingTask(task.created_by) && task.user_title && <Text strong>任务标题：{task.user_title}</Text>}
         {task.writing_suggestions && (
           <Tooltip title={task.writing_suggestions}>
             <Tag color="orange" style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer', marginTop: 4 }}>
@@ -1723,7 +1726,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
       if (task.completedCount >= task.quantity) return false;
       // 日期筛选
       if (dayjs(task.deadline).format('YYYY-MM-DD') !== selectedDate.format('YYYY-MM-DD')) return false;
-      if (filterCity && task.city !== filterCity) return false;
+      if (filterCity && !(isRankingTask(task.created_by) ? task.city.split('、').includes(filterCity) : task.city === filterCity)) return false;
       if (filterPromptType && task.prompt_type !== filterPromptType) return false;
       if (filterWebsite && (!task.websites || !task.websites.includes(filterWebsite))) return false;
       // 备注筛选
@@ -1990,6 +1993,17 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
   const [retryTaskData, setRetryTaskData] = useState<TaskWithArticles | null>(null);
 
   const handleRetry = async (taskId: string) => {
+    const rankingTask = tasks.find(task => task.id === taskId);
+    if (rankingTask && isRankingTask(rankingTask.created_by)) {
+      message.loading({ content: '正在重新生成排名任务文章...', key: `ranking-retry-${taskId}` });
+      try {
+        await retryRankingTask(taskId, rankingTask.created_by);
+        message.success({ content: '重新生成成功，文章仍在未生成', key: `ranking-retry-${taskId}` });
+      } catch (error) {
+        message.error({ content: `重新生成失败：${error instanceof Error ? error.message : String(error)}`, key: `ranking-retry-${taskId}` });
+      } finally { await refreshTasks(); }
+      return;
+    }
     setRetryTaskId(taskId);
     
     // 从数据库获取该任务的最新数据（确保包含 user_title 和 extra_requirement）
@@ -2042,6 +2056,11 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
     let failedCount = 0;
     
     for (const task of tasksToRetry) {
+      if (isRankingTask(task.created_by)) {
+        try { await retryRankingTask(task.id, task.created_by); }
+        catch (error) { failedCount++; message.error(`${task.city}: ${error instanceof Error ? error.message : String(error)}`); }
+        continue;
+      }
       try {
         console.log(`[handleBatchRetry] 处理任务: ${task.city}, 设置为 generating`);
         await updateAiStatus(task.id, 'generating');
@@ -2466,7 +2485,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                     allowClear
                     style={{ width: 140, borderRadius: 12 }}
                     bordered={false}
-                    options={CITIES.map(city => ({ label: city, value: city }))}
+                    options={[...CITIES, '美国', '澳洲', '无地区'].map(city => ({ label: city, value: city }))}
                   />
                   <Select
                     placeholder="选择提示词类型"
