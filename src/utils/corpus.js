@@ -1,24 +1,11 @@
 export const CORPUS_KEY_PREFIX = 'corpus_entry_';
 export const CORPUS_PLACEHOLDER = '{{语料}}';
 
-export interface CorpusEntry {
-  key: string;
-  title: string;
-  content: string;
-  updated_at?: string | null;
-}
-
-export interface CorpusRow {
-  key: string;
-  value: string | null;
-  updated_at?: string | null;
-}
-
-export function parseCorpusEntries(rows: CorpusRow[]): CorpusEntry[] {
+export function parseCorpusEntries(rows) {
   return rows
     .filter((row) => row.key.startsWith(CORPUS_KEY_PREFIX))
     .map((row) => {
-      let value: unknown;
+      let value;
       try {
         value = JSON.parse(row.value || '');
       } catch {
@@ -48,11 +35,11 @@ export function parseCorpusEntries(rows: CorpusRow[]): CorpusEntry[] {
     .sort((a, b) => a.title.localeCompare(b.title, 'zh-CN') || a.key.localeCompare(b.key));
 }
 
-export function buildCorpusText(entries: CorpusEntry[]): string {
+export function buildCorpusText(entries) {
   return entries.map((entry) => `【${entry.title}】\n${entry.content}`).join('\n\n');
 }
 
-export function replaceCorpusPlaceholder(prompt: string, entries: CorpusEntry[]): string {
+export function replaceCorpusPlaceholder(prompt, entries) {
   if (!prompt.includes(CORPUS_PLACEHOLDER)) return prompt;
   if (entries.length === 0) {
     throw new Error('提示词包含 {{语料}}，但语料库为空。请先在内容生成者 → 语料库中添加语料，然后重试本次生成');

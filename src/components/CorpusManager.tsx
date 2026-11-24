@@ -8,7 +8,7 @@ import {
   parseCorpusEntries,
   type CorpusEntry,
   type CorpusRow,
-} from '../utils/corpus';
+} from '../utils/corpus.js';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;

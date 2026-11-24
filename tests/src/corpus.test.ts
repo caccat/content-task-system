@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseCorpusEntries, replaceCorpusPlaceholder } from '../../src/utils/corpus.ts';
+import { parseCorpusEntries, replaceCorpusPlaceholder } from '../../src/utils/corpus.js';
 
 test('parses independent entries and replaces every corpus placeholder', () => {
   const entries = parseCorpusEntries([

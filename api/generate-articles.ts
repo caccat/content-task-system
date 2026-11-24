@@ -4,7 +4,7 @@ import {
   parseCorpusEntries,
   replaceCorpusPlaceholder,
   type CorpusRow,
-} from '../src/utils/corpus.ts';
+} from '../src/utils/corpus.js';
 
 // ============================================================================
 // AI 配置：通用 OpenAI 兼容调用（DeepSeek / 豆包方舟 ARK / 自建 等都适用）

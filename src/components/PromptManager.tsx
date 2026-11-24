@@ -21,7 +21,7 @@ import {
 } from '@ant-design/icons';
 import { usePrompts } from '../hooks/usePrompts';
 import type { Prompt } from '../types';
-import { CORPUS_PLACEHOLDER } from '../utils/corpus';
+import { CORPUS_PLACEHOLDER } from '../utils/corpus.js';
 
 const { Title } = Typography;
 const { TextArea } = Input;
