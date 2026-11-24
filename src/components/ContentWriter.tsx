@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { getAiGenerationError } from '../utils/aiGenerationResult';
 import { Card, List, Badge, Tag, Button, Modal, Input, message, Typography, Space, Progress, Popconfirm, Select, Row, Col, DatePicker, Table, Checkbox, Spin, Alert, Empty, Tabs, Tooltip } from 'antd';
 import { EditOutlined, FileTextOutlined, DeleteOutlined, ExclamationCircleOutlined, CheckCircleOutlined, UndoOutlined, CalendarOutlined, RobotOutlined, UserOutlined, LoadingOutlined, SyncOutlined, StopOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useTasks, useArticles } from '../hooks/useSupabase';
@@ -1805,6 +1806,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
 
       // 2. 并行调用 Edge Function 生成文章
       message.loading({ content: `正在调用 AI 生成 ${tasksToGenerate.length} 篇文章...`, key: 'ai-generate' });
+      let failedCount = 0;
       
       const generatePromises = tasksToGenerate.map(async (task, index) => {
         const userTitle = batchData[index]?.title || `${task.city} - ${dayjs(task.deadline).format('MM月DD日')}文章`;
@@ -1831,6 +1833,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
           });
 
           const result = await response.json();
+          const generationError = getAiGenerationError(result, response.status);
 
           console.log('[generateWithAi] API返回结果:', {
             taskId: task.id,
@@ -1844,7 +1847,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
             taskArticleIds: task.articles.map(a => a.id),
           });
 
-          if (result.success || (result.results && result.results[0]?.success)) {
+          if (!generationError) {
             // 保存生成的文章内容（将换行符转换为 HTML）
             const articleContent = result.results?.[0]?.content;
             
@@ -1865,6 +1868,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
               
               if (updateErr) {
                 console.error('[generateWithAi] 文章更新失败:', updateErr);
+                throw updateErr;
               } else {
                 console.log('[generateWithAi] 文章更新成功');
               }
@@ -1880,12 +1884,13 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
               
               if (findErr) {
                 console.error('[generateWithAi] 查找文章失败:', findErr);
+                throw findErr;
               }
               
               if (existingArticles && existingArticles.length > 0) {
                 // 找到已有文章，更新它而不是创建新的
                 console.log('[generateWithAi] 找到已有文章，更新内容:', existingArticles[0].id);
-                await supabase
+                const { error: updateErr } = await supabase
                   .from('articles')
                   .update({
                     content: normalizeArticleContent(articleContent),
@@ -1893,15 +1898,16 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                     updated_at: new Date().toISOString(),
                   })
                   .eq('id', existingArticles[0].id);
+                if (updateErr) throw updateErr;
               } else {
                 // ⚠️ 创建任务时已根据 quantity 创建了文章记录，这里不应再创建
                 // 如果走到这里说明 DB 中确实没有该任务的文章，可能是异常情况
                 console.error('[generateWithAi] ❌ 严重: 未找到文章且不创建新文章! taskId=', task.id,
                   '原因: createTask 时应已创建文章记录，此处缺失可能是数据库异常');
-                message.error(`${task.city}: 文章记录丢失，无法保存AI生成内容，请检查数据库`);
+                throw new Error('文章记录丢失，无法保存 AI 生成内容，请检查数据库');
               }
             } else {
-              console.warn('[generateWithAi] 跳过保存: articleContent=', !!articleContent, 'articlesCount=', task.articles.length);
+              throw new Error('AI 接口未返回文章内容，无法保存');
             }
             // 保存标题和额外要求到浏览器 localStorage（兼容旧数据）
             saveArticleData(task.id, userTitle, extraRequirement);
@@ -1918,13 +1924,25 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
             await updateAiStatus(task.id, 'completed');
           } else {
             // 生成失败
-            const errorMsg = result.error || result.results?.[0]?.error || '未知错误';
-            message.error({ content: `${task.city}: ${errorMsg}`, key: 'ai-error' });
-            await updateAiStatus(task.id, 'failed');
+            failedCount++;
+            message.error({ content: `${task.city}: ${generationError}`, key: `ai-error-${task.id}` });
+            try {
+              await updateAiStatus(task.id, 'failed');
+            } catch (statusError) {
+              console.error('更新 AI 失败状态失败:', statusError);
+              message.error(`${task.city}: 无法记录 AI 失败状态`);
+            }
           }
         } catch (err: any) {
           console.error(`生成失败:`, err);
-          await updateAiStatus(task.id, 'failed');
+          failedCount++;
+          message.error({ content: `${task.city}: ${err?.message || '网络或保存失败'}`, key: `ai-error-${task.id}` });
+          try {
+            await updateAiStatus(task.id, 'failed');
+          } catch (statusError) {
+            console.error('更新 AI 失败状态失败:', statusError);
+            message.error(`${task.city}: 无法记录 AI 失败状态`);
+          }
         }
         refreshTasks();
       });
@@ -1932,7 +1950,11 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
       // 并行执行所有生成
       await Promise.all(generatePromises);
       
-      message.success({ content: `AI 生成完成！`, key: 'ai-generate' });
+      if (failedCount > 0) {
+        message.warning({ content: `AI 生成结束：${tasksToGenerate.length - failedCount} 个成功，${failedCount} 个失败`, key: 'ai-generate' });
+      } else {
+        message.success({ content: `AI 生成完成！`, key: 'ai-generate' });
+      }
       refreshTasks();
     } catch {
       message.error('操作失败');
@@ -2017,6 +2039,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
 
     message.loading({ content: `正在批量重试 ${tasksToRetry.length} 个任务...`, key: 'batch-retry' });
     console.log('[handleBatchRetry] 开始处理', tasksToRetry.length, '个任务');
+    let failedCount = 0;
     
     for (const task of tasksToRetry) {
       try {
@@ -2044,37 +2067,57 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
 
         console.log(`[handleBatchRetry] AI API 响应状态:`, response.status);
         const result = await response.json();
+        const generationError = getAiGenerationError(result, response.status);
         console.log(`[handleBatchRetry] AI API 结果:`, result);
 
-        if (result.success || (result.results && result.results[0]?.success)) {
+        if (!generationError) {
           const content = result.results?.[0]?.content;
-          if (content && task.articles.length > 0) {
-            console.log(`[handleBatchRetry] 保存内容到文章, articleId=`, task.articles[0].id);
-            await supabase
-              .from('articles')
-              .update({
-                content: normalizeArticleContent(content),
-                status: 'draft',
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', task.articles[0].id);
-          }
-          if (task.articles.length > 0) clearArticleDraft(task.articles[0].id);
+          if (!content) throw new Error('AI 接口未返回文章内容');
+          if (task.articles.length === 0) throw new Error('文章记录不存在，无法保存 AI 内容');
+          console.log(`[handleBatchRetry] 保存内容到文章, articleId=`, task.articles[0].id);
+          const { error: saveError } = await supabase
+            .from('articles')
+            .update({
+              content: normalizeArticleContent(content),
+              status: 'draft',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', task.articles[0].id);
+          if (saveError) throw saveError;
+          clearArticleDraft(task.articles[0].id);
           console.log(`[handleBatchRetry] 标记为 completed: ${task.city}`);
           await updateAiStatus(task.id, 'completed');
         } else {
           console.error(`[handleBatchRetry] AI 返回失败: ${task.city}`, result);
-          await updateAiStatus(task.id, 'failed');
+          failedCount++;
+          message.error(`${task.city}: ${generationError}`);
+          try {
+            await updateAiStatus(task.id, 'failed');
+          } catch (statusError) {
+            console.error(`[handleBatchRetry] 更新失败状态失败: ${task.city}`, statusError);
+            message.error(`${task.city}: 无法记录 AI 失败状态`);
+          }
         }
       } catch (err) {
         console.error(`[handleBatchRetry] 异常 [${task.city}]:`, err);
-        try { await updateAiStatus(task.id, 'failed'); } catch {}
+        failedCount++;
+        message.error(`${task.city}: ${err instanceof Error ? err.message : '网络或保存失败'}`);
+        try {
+          await updateAiStatus(task.id, 'failed');
+        } catch (statusError) {
+          console.error(`[handleBatchRetry] 更新失败状态失败: ${task.city}`, statusError);
+          message.error(`${task.city}: 无法记录 AI 失败状态`);
+        }
       }
     }
     
     console.log('[handleBatchRetry] 全部完成，刷新列表');
     refreshTasks();
-    message.success({ content: `批量重试完成！共 ${tasksToRetry.length} 个任务`, key: 'batch-retry' });
+    if (failedCount > 0) {
+      message.warning({ content: `批量重试结束：${tasksToRetry.length - failedCount} 个成功，${failedCount} 个失败`, key: 'batch-retry' });
+    } else {
+      message.success({ content: `批量重试完成！共 ${tasksToRetry.length} 个任务`, key: 'batch-retry' });
+    }
   };
 
   // 批量转人工
@@ -2217,6 +2260,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                     });
 
                     const result = await response.json();
+                    const generationError = getAiGenerationError(result, response.status);
                     
                     console.log('[重新生成] API返回结果:', {
                       taskId: retryTaskId,
@@ -2229,7 +2273,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                       taskArticleIds: task.articles?.map(a => a.id) || [],
                     });
 
-                    if (result.success || (result.results && result.results[0]?.success)) {
+                    if (!generationError) {
                       const content = result.results?.[0]?.content;
                       
                       if (content && task.articles && task.articles.length > 0) {
@@ -2248,6 +2292,7 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                         
                         if (error) {
                           console.error('[重新生成] 文章更新失败:', error);
+                          throw error;
                         } else {
                           console.log('[重新生成] 文章更新成功');
                         }
@@ -2264,12 +2309,13 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
 
                         if (findErr) {
                           console.error('[重新生成] 查找文章失败:', findErr);
+                          throw findErr;
                         }
                         
                         if (existingArticles && existingArticles.length > 0) {
                           // 找到已有文章，更新它
                           console.log('[重新生成] 找到已有文章，更新内容:', existingArticles[0].id);
-                          await supabase
+                          const { error: updateErr } = await supabase
                             .from('articles')
                             .update({
                               content: normalizeArticleContent(content),
@@ -2277,14 +2323,15 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                               updated_at: new Date().toISOString(),
                             })
                             .eq('id', existingArticles[0].id);
+                          if (updateErr) throw updateErr;
                         } else {
                           // ⚠️ 创建任务时已根据 quantity 创建了文章记录，这里不应再创建
                           console.error('[重新生成] ❌ 严重: 未找到文章且不创建新文章! taskId=', retryTaskId,
                             '原因: createTask 时应已创建文章记录，此处缺失可能是数据库异常');
-                          message.error(`文章记录丢失，无法保存重新生成的内容，请检查数据库`);
+                          throw new Error('文章记录丢失，无法保存重新生成的内容，请检查数据库');
                         }
                       } else {
-                        console.warn('[重新生成] 跳过保存: content=', !!content, 'articlesCount=', task.articles?.length || 0);
+                        throw new Error('AI 接口未返回文章内容，无法保存');
                       }
                       
                       // 清除旧草稿，因为文章内容已经更新
@@ -2297,9 +2344,8 @@ export default function ContentWriter({ defaultStatus, onOpenSettings, onDateCha
                       await updateAiStatus(retryTaskId, 'completed');
                       message.success({ content: '重新生成成功！', key: 'retry' });
                     } else {
-                      const errorMsg = result.error || result.results?.[0]?.error || '未知错误';
                       console.error('重新生成失败详情:', result);
-                      message.error({ content: `生成失败: ${errorMsg}`, key: 'retry' });
+                      message.error({ content: `生成失败: ${generationError}`, key: 'retry' });
                       await updateAiStatus(retryTaskId, 'failed');
                     }
                     refreshTasks();

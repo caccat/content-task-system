@@ -21,6 +21,7 @@ import {
 } from '@ant-design/icons';
 import { usePrompts } from '../hooks/usePrompts';
 import type { Prompt } from '../types';
+import { CORPUS_PLACEHOLDER } from '../utils/corpus';
 
 const { Title } = Typography;
 const { TextArea } = Input;
@@ -233,10 +234,11 @@ export default function PromptManager() {
             name="content"
             label="提示词具体内容"
             rules={[{ required: true, message: '请输入提示词内容' }]}
+            extra={`需要共享语料时，在写作指令中加入 ${CORPUS_PLACEHOLDER}；AI 生成时会填入语料库的全部条目。没有占位符的提示词保持原样；语料库为空时会提示补充后重试。`}
           >
             <TextArea
               rows={6}
-              placeholder="请输入详细的提示词内容..."
+              placeholder={`请输入详细的提示词内容，可使用 ${CORPUS_PLACEHOLDER}`}
             />
           </Form.Item>
 

@@ -1,4 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import {
+  CORPUS_PLACEHOLDER,
+  parseCorpusEntries,
+  replaceCorpusPlaceholder,
+  type CorpusRow,
+} from '../src/utils/corpus.ts';
 
 // ============================================================================
 // AI 配置：通用 OpenAI 兼容调用（DeepSeek / 豆包方舟 ARK / 自建 等都适用）
@@ -29,32 +35,42 @@ interface SupabaseReadResult {
   cfg: Partial<AiConfig>;
   readError: string | null;
   rowCount: number | null;
+  rows: CorpusRow[];
 }
 
 async function getAiConfigFromSupabase(
   supabaseUrl: string,
   supabaseKey: string
 ): Promise<SupabaseReadResult> {
-  const response = await fetch(
-    `${supabaseUrl}/rest/v1/settings?select=key,value&limit=1000`,
-    {
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-      },
-    }
-  );
+  const rows: CorpusRow[] = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/settings?select=key,value&order=key.asc&limit=${pageSize}&offset=${offset}`,
+      {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+      }
+    );
 
-  if (!response.ok) {
-    const errText = await response.text().catch(() => '');
-    return {
-      cfg: {},
-      readError: `读 settings 失败 HTTP ${response.status}: ${errText.slice(0, 200)}`,
-      rowCount: null,
-    };
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      return {
+        cfg: {},
+        readError: `读 settings 失败 HTTP ${response.status}: ${errText.slice(0, 200)}`,
+        rowCount: null,
+        rows: [],
+      };
+    }
+
+    const page = (await response.json()) as CorpusRow[];
+    if (!Array.isArray(page)) throw new Error('读 settings 失败：返回格式不是数组');
+    rows.push(...page);
+    if (page.length < pageSize) break;
   }
 
-  const rows = (await response.json()) as Array<{ key: string; value: string | null }>;
   const map: Record<string, string> = {};
   for (const r of rows) {
     if (r.value != null && r.value !== '') map[r.key] = r.value;
@@ -74,7 +90,7 @@ async function getAiConfigFromSupabase(
   }
   if (map.ai_system_prompt) cfg.systemPrompt = map.ai_system_prompt;
 
-  return { cfg, readError: null, rowCount: rows.length };
+  return { cfg, readError: null, rowCount: rows.length, rows };
 }
 
 // 合并：Supabase > env var > 默认
@@ -132,7 +148,9 @@ async function generateArticle(
   writingSuggestions: string,
   cfg: AiConfig,
   title?: string,
-  extraRequirement?: string
+  extraRequirement?: string,
+  corpusRows: CorpusRow[] = [],
+  corpusReadError: string | null = null
 ): Promise<string> {
   if (!promptContent || promptContent.trim() === '') {
     throw new Error('提示词内容为空，请先在文章提示词管理中填写提示词内容');
@@ -142,6 +160,11 @@ async function generateArticle(
     .replace(/\{\{title\}\}/g, title || '')
     .replace(/\{\{city\}\}/g, city)
     .replace(/\{\{suggestions\}\}/g, writingSuggestions || '请根据城市特点创作一篇优质内容');
+
+  if (prompt.includes(CORPUS_PLACEHOLDER)) {
+    if (corpusReadError) throw new Error(`读取语料库失败：${corpusReadError}`);
+    prompt = replaceCorpusPlaceholder(prompt, parseCorpusEntries(corpusRows));
+  }
 
   if (extraRequirement && extraRequirement.trim()) {
     prompt = prompt.trim() + '\n\n额外要求：' + extraRequirement.trim();
@@ -204,11 +227,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let supabaseCfg: Partial<AiConfig> = {};
     let supabaseReadError: string | null = null;
     let settingsRowCount: number | null = null;
+    let settingsRows: CorpusRow[] = [];
     try {
       const r = await getAiConfigFromSupabase(supabaseUrl, supabaseKey);
       supabaseCfg = r.cfg;
       supabaseReadError = r.readError;
       settingsRowCount = r.rowCount;
+      settingsRows = r.rows;
       if (supabaseReadError) {
         console.warn('[generate-articles] 读 Supabase AI 配置失败:', supabaseReadError);
       }
@@ -253,7 +278,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           task.writing_suggestions,
           cfg,
           task.title,
-          task.extra_requirement
+          task.extra_requirement,
+          settingsRows,
+          supabaseReadError
         );
 
         results.push({ success: true, index: i, content });

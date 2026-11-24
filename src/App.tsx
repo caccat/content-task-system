@@ -26,6 +26,7 @@ import ContentWriter from './components/ContentWriter';
 import TaskPublisher from './components/TaskPublisher';
 import WebsiteManager from './components/WebsiteManager';
 import PromptManager from './components/PromptManager';
+import CorpusManager from './components/CorpusManager';
 import Settings from './components/Settings';
 import ErrorBoundary from './components/ErrorBoundary';
 import { supabase } from './supabase';
@@ -39,7 +40,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
 // 子页面类型
 type CreatorSubPage = 'create' | 'created' | 'websites' | 'overdue';
-type WriterSubPage = 'prompts' | 'draft' | 'ready' | 'completed';
+type WriterSubPage = 'prompts' | 'corpus' | 'draft' | 'ready' | 'completed';
 type PublisherSubPage = 'tasks' | 'ready' | 'completed';
 type SettingsSubPage = 'general' | 'notifications';
 
@@ -272,6 +273,11 @@ function App() {
           icon: <FileTextOutlined />,
           label: '文章提示词管理',
         },
+        {
+          key: 'writer-corpus',
+          icon: <BookOutlined />,
+          label: '语料库',
+        },
       ],
     },
     {
@@ -342,6 +348,8 @@ function App() {
             return <ContentWriter defaultStatus="completed" onOpenSettings={() => setCurrentRole('settings')} onDateChange={handleChildDateChange} />;
           case 'prompts':
             return <PromptManager />;
+          case 'corpus':
+            return <CorpusManager />;
           default:
             return <ContentWriter defaultStatus="draft" onOpenSettings={() => setCurrentRole('settings')} />;
         }
@@ -585,7 +593,7 @@ function App() {
               if (!openKeys.includes('writer')) {
                 setOpenKeys(prev => [...prev, 'writer']);
               }
-              if (key === 'writer-draft' || key === 'writer-ready' || key === 'writer-completed' || key === 'writer-prompts') {
+              if (key === 'writer-draft' || key === 'writer-ready' || key === 'writer-completed' || key === 'writer-prompts' || key === 'writer-corpus') {
                 // 保持 writer 菜单展开
               }
             } else if (key.startsWith('publisher-')) {
