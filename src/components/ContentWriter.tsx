@@ -1207,7 +1207,6 @@ function AiGenerateSection({
           文章数：{task.quantity} | 
           截止：{dayjs(task.deadline).format('YYYY-MM-DD')}
         </Text>
-        {isRankingTask(task.created_by) && task.user_title && <Text strong>任务标题：{task.user_title}</Text>}
         {task.writing_suggestions && (
           <Tooltip title={task.writing_suggestions}>
             <Tag color="orange" style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer', marginTop: 4 }}>

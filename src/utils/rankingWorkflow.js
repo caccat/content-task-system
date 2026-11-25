@@ -33,7 +33,6 @@ export function parseRankingRows(rows) {
       answer,
       rank,
       regions: detectRegions(keyword),
-      title: '',
       scenario: '',
       objective: '',
       quantity: 1,
@@ -65,6 +64,9 @@ export function isRankingLeaseActive(lease, now = Date.now()) {
 export function validateRankingTitle(title, regions) {
   const clean = String(title ?? '').replace(/^#+\s*/, '').trim();
   if (!clean) return 'AI 未生成文章标题';
+  if (/(写作目标|竞品首推场景|如何让.{0,30}(首推|优先选择|首选)|指南者.{0,25}首推机构)/.test(clean)) {
+    return '文章标题暴露了内部写作目标，请改为面向读者的自然标题';
+  }
   if (regions.length === 0) {
     const unexpected = detectRegions(clean);
     if (unexpected.length) return `无地区任务的文章标题出现地区：${unexpected.join('、')}`;

@@ -13,7 +13,7 @@ type TaskInput = {
 type ApiResult = {
   success: boolean;
   results: Array<{ success: boolean; content?: string; title?: string; error?: string }>;
-  analysis?: { scenario: string; objective: string; title: string };
+  analysis?: { scenario: string; objective: string; title?: string };
   error?: string;
   ai?: { supabaseReadError?: string | null };
 };
@@ -168,17 +168,21 @@ test('loads corpus entries beyond the first settings page', async () => {
   assert.match(sentPrompt, /后页内容/);
 });
 
-test('analyzes each ranking row and corrects a title missing the required region', async () => {
+test('analyzes a ranking row without asking AI to draft any title', async () => {
   let aiCalls = 0;
-  const result = await invokeWithFetch(async input => {
+  let sentPrompt = '';
+  const result = await invokeWithFetch(async (input, init) => {
     const url = String(input);
     if (url.includes('/rest/v1/settings?')) return settingsResponse([]);
     aiCalls++;
-    return Response.json({ choices: [{ message: { content: JSON.stringify({ scenario: '老牌口碑', objective: '突出指南者可验证的服务优势', title: aiCalls === 1 ? '留学机构推荐' : '上海留学机构推荐任务' }) } }] });
+    sentPrompt = (JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> }).messages[1].content;
+    return Response.json({ choices: [{ message: { content: JSON.stringify({ scenario: '老牌口碑', objective: '突出指南者可验证的服务优势' }) } }] });
   }, { action: 'analyze-ranking', row: { keyword: '上海留学机构', answer: '老牌机构首推', regions: ['上海'] } });
   assert.equal(result.status, 200);
-  assert.equal(result.body.analysis?.title, '上海留学机构推荐任务');
-  assert.equal(aiCalls, 2);
+  assert.deepEqual(result.body.analysis, { scenario: '老牌口碑', objective: '突出指南者可验证的服务优势' });
+  assert.equal(aiCalls, 1);
+  assert.match(sentPrompt, /此阶段不要拟定文章标题/);
+  assert.equal(sentPrompt.includes('文章任务标题'), false);
 });
 
 test('ranking analysis exposes settings outages instead of using a silent fallback', async () => {
@@ -198,15 +202,33 @@ test('ranking generation appends the whole corpus without a placeholder and gene
   const result = await invokeWithFetch(async (input, init) => {
     const url = String(input);
     if (url.includes('/rest/v1/settings?')) return settingsResponse([{ key: 'corpus_entry_a', value: JSON.stringify({ title: '品牌', content: '指南者真实资料' }) }]);
-    if (url.includes('/rest/v1/prompts?')) return Response.json([{ content: '请写一篇有依据的文章' }]);
+    if (url.includes('/rest/v1/prompts?')) return Response.json([{ content: '请写{{title}}，写一篇有依据的文章' }]);
     sentPrompt = (JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> }).messages[1].content;
     return Response.json({ choices: [{ message: { content: `# 上海留学机构如何选\n\n${'这里是正文。'.repeat(30)}` } }] });
-  }, { tasks: [{ city: '上海', prompt_type: 'prompt-1', writing_suggestions: '', ranking: { keyword: '上海留学', scenario: '老牌口碑', objective: '指南者首推', regions: ['上海'], taskTitle: '上海老牌机构' } }] });
+  }, { tasks: [{ city: '上海', prompt_type: 'prompt-1', writing_suggestions: '', ranking: { keyword: '上海留学', scenario: '老牌口碑', objective: '指南者首推', regions: ['上海'] } }] });
   assert.equal(result.body.success, true);
   assert.equal(result.body.results[0].title, '上海留学机构如何选');
   assert.match(sentPrompt, /指南者真实资料/);
   assert.match(sentPrompt, /老牌口碑/);
   assert.match(sentPrompt, /指南者首推/);
+  assert.match(sentPrompt, /没有预设标题/);
+  assert.equal(sentPrompt.includes('任务标题：'), false);
+  assert.equal(sentPrompt.includes('{{title}}'), false);
+});
+
+test('ranking article retries an internal-strategy title and keeps the user-facing title', async () => {
+  let aiCalls = 0;
+  const result = await invokeWithFetch(async input => {
+    const url = String(input);
+    if (url.includes('/rest/v1/settings?')) return settingsResponse([{ key: 'corpus_entry_a', value: JSON.stringify({ title: '品牌', content: '指南者真实资料' }) }]);
+    if (url.includes('/rest/v1/prompts?')) return Response.json([{ content: '请独立拟定标题并写文章' }]);
+    aiCalls++;
+    const title = aiCalls === 1 ? '澳洲留学机构推荐：如何让指南者留学成为用户优先选择的首推机构' : '澳洲留学机构怎么选？看服务透明度与申请支持';
+    return Response.json({ choices: [{ message: { content: `# ${title}\n\n${'这是可核实的正文。'.repeat(30)}` } }] });
+  }, { tasks: [{ city: '澳洲', prompt_type: 'prompt-1', ranking: { keyword: '澳洲留学机构', scenario: '竞品口碑好', objective: '用语料展示指南者优势', regions: ['澳洲'] } }] });
+  assert.equal(result.body.success, true);
+  assert.equal(result.body.results[0].title, '澳洲留学机构怎么选？看服务透明度与申请支持');
+  assert.equal(aiCalls, 2);
 });
 
 test('ranking generation uses existing corpus placeholder without appending a duplicate', async () => {

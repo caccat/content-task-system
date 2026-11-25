@@ -44,6 +44,7 @@ type CreatorSubPage = 'create' | 'ranking' | 'created' | 'websites' | 'overdue';
 type WriterSubPage = 'prompts' | 'corpus' | 'draft' | 'ready' | 'completed';
 type PublisherSubPage = 'tasks' | 'ready' | 'completed';
 type SettingsSubPage = 'general' | 'notifications';
+const RANKING_PAGE_STORAGE_KEY = 'content_task_ranking_page_active';
 
 function SetupGuide() {
   const sqlScript = `-- 创建任务表
@@ -140,7 +141,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE articles;
 
 function App() {
   const [currentRole, setCurrentRole] = useState<UserRole | 'settings'>('creator');
-  const [creatorSubPage, setCreatorSubPage] = useState<CreatorSubPage>('create');
+  const [creatorSubPage, setCreatorSubPage] = useState<CreatorSubPage>(() => localStorage.getItem(RANKING_PAGE_STORAGE_KEY) === '1' ? 'ranking' : 'create');
   const [writerSubPage, setWriterSubPage] = useState<WriterSubPage>('draft');
   const [publisherSubPage, setPublisherSubPage] = useState<PublisherSubPage>('tasks');
   const [openKeys, setOpenKeys] = useState<string[]>(['creator', 'writer', 'publisher']);
@@ -592,6 +593,8 @@ function App() {
           }}
           items={menuItems}
           onClick={({ key }) => {
+            if (key === 'creator-ranking') localStorage.setItem(RANKING_PAGE_STORAGE_KEY, '1');
+            else localStorage.removeItem(RANKING_PAGE_STORAGE_KEY);
             if (key.startsWith('creator-')) {
               setCurrentRole('creator');
               setCreatorSubPage(key.replace('creator-', '') as CreatorSubPage);

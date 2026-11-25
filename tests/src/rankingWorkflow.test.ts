@@ -24,6 +24,7 @@ test('recognizes all required regions and no-region titles', () => {
   assert.match(validateRankingTitle('无地区留学机构', [] ) || '', /无地区/);
   assert.equal(validateRankingTitle('留学机构推荐', []), null);
   assert.match(validateRankingTitle('上海留学', ['上海', '北京']) || '', /北京/);
+  assert.match(validateRankingTitle('澳洲留学机构推荐：如何让指南者留学成为用户优先选择的首推机构', ['澳洲']) || '', /内部写作目标/);
 });
 
 test('same table hashes identically regardless of filename while changed content differs', async () => {

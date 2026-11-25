@@ -4,7 +4,7 @@ export const RANKING_SOURCE_PREFIX: string;
 export const RANKING_TASK_PREFIX: string;
 export type RankingCandidate = {
   id: string; sourceRow: number; keyword: string; answer: string; rank: number | null;
-  regions: string[]; title: string; scenario: string; objective: string;
+  regions: string[]; scenario: string; objective: string;
   quantity: number; websites: string[]; promptId: string; deadline: string;
   state: 'pending' | 'analyzing' | 'ready' | 'failed' | 'creating' | 'generating' | 'completed';
   lastError: string | null; taskId: string | null;

@@ -9,6 +9,7 @@ export interface RankingBatch {
   importedAt: string;
   totalRows: number;
   candidates: RankingCandidate[];
+  defaults?: { quantity: number; websites: string[]; promptId: string; deadline: string };
   storageUpdatedAt?: string;
   lease?: { owner: string; purpose: 'analysis' | 'generation'; updatedAt: string } | null;
 }
@@ -36,7 +37,11 @@ export async function insertRankingSource(hash: string, canonicalRows: string[][
 }
 
 function serializeBatch(batch: RankingBatch) {
-  return JSON.stringify({ hash: batch.hash, filename: batch.filename, importedAt: batch.importedAt, totalRows: batch.totalRows, candidates: batch.candidates, lease: batch.lease || null });
+  return JSON.stringify({ hash: batch.hash, filename: batch.filename, importedAt: batch.importedAt, totalRows: batch.totalRows, candidates: batch.candidates.map(candidate => {
+    const clean = { ...candidate } as Record<string, unknown>;
+    delete clean.title; // 兼容旧批次：旧版内部标题不再参与新工作流
+    return clean;
+  }), defaults: batch.defaults, lease: batch.lease || null });
 }
 
 export async function replaceRankingBatch(previous: RankingBatch, next: RankingBatch) {
@@ -89,7 +94,7 @@ export async function ensureRankingTask(batch: RankingBatch, candidate: RankingC
       created_by: marker,
       generation_mode: 'ai',
       ai_status: 'pending',
-      user_title: candidate.title,
+      user_title: null,
       extra_requirement: null,
     }).select('id').single();
     if (error) throw error;
@@ -131,7 +136,7 @@ export async function generateRankingTask(taskId: string, candidate: RankingCand
           city: candidate.regions.join('、') || '无地区',
           prompt_type: candidate.promptId,
           writing_suggestions: candidate.objective,
-          ranking: { keyword: candidate.keyword, scenario: candidate.scenario, objective: candidate.objective, regions: candidate.regions, taskTitle: candidate.title },
+          ranking: { keyword: candidate.keyword, scenario: candidate.scenario, objective: candidate.objective, regions: candidate.regions },
         }] }),
       });
       const result = await response.json().catch(() => null);

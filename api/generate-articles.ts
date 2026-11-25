@@ -6,7 +6,7 @@ import {
   replaceCorpusPlaceholder,
   type CorpusRow,
 } from '../src/utils/corpus.js';
-import { validateRankingTitle, extractRankingArticle } from '../src/utils/rankingWorkflow.js';
+import { extractRankingArticle } from '../src/utils/rankingWorkflow.js';
 
 // ============================================================================
 // AI 配置：通用 OpenAI 兼容调用（DeepSeek / 豆包方舟 ARK / 自建 等都适用）
@@ -206,38 +206,33 @@ async function getPromptContent(
   return data[0].content;
 }
 
-function parseAnalysis(text: string, regions: string[]) {
+function parseAnalysis(text: string) {
   const json = text.match(/\{[\s\S]*\}/)?.[0];
   if (!json) throw new Error('AI 未返回可解析的场景分析');
-  let result: { scenario?: unknown; objective?: unknown; title?: unknown };
+  let result: { scenario?: unknown; objective?: unknown };
   try { result = JSON.parse(json); } catch { throw new Error('AI 返回的场景分析不是有效 JSON'); }
   const scenario = String(result.scenario ?? '').trim();
   const objective = String(result.objective ?? '').trim();
-  const title = String(result.title ?? '').trim();
   if (!scenario || !objective) throw new Error('AI 场景分析缺少场景或写作目标');
-  const titleError = validateRankingTitle(title, regions);
-  if (titleError) throw new Error(`任务标题不符合要求：${titleError}`);
-  return { scenario, objective, title };
+  return { scenario, objective };
 }
 
 async function analyzeRankingRow(
   row: { keyword: string; answer: string; regions: string[] },
   cfg: AiConfig
 ) {
-  const regionRule = row.regions.length
-    ? `任务标题必须包含全部地区：${row.regions.join('、')}。`
-    : '关键词不含指定地区。任务标题不得出现任何地区名，也不得出现“无地区”。';
-  const prompt = `分析下面排名表的一行。第二列是 AI 回答，指南者留学并非首推。请识别回答中优先推荐竞品的具体场景或理由，并提出在该场景下让指南者留学成为首推的写作目标。不要编造指南者留学的事实，写作目标可以要求用提供的语料核实证据。\n关键词：${row.keyword}\nAI回答：${row.answer}\n${regionRule}\n只返回 JSON：{"scenario":"竞品首推场景","objective":"写作目标","title":"文章任务标题"}`;
+  const regionContext = row.regions.length ? `关键词涉及地区：${row.regions.join('、')}。` : '关键词无指定地区。';
+  const prompt = `分析下面排名表的一行。第二列是 AI 回答，指南者留学并非首推。请识别回答中优先推荐竞品的具体场景或理由，并提出在该场景下让指南者留学成为首推的写作目标。不要编造指南者留学的事实，写作目标可以要求用提供的语料核实证据。此阶段不要拟定文章标题。\n关键词：${row.keyword}\nAI回答：${row.answer}\n${regionContext}\n只返回 JSON：{"scenario":"竞品首推场景","objective":"写作目标"}`;
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
-    try { return parseAnalysis(await callAi(prompt + (lastError ? `\n上次结果错误：${lastError.message}。请修正。` : ''), cfg), row.regions); }
+    try { return parseAnalysis(await callAi(prompt + (lastError ? `\n上次结果错误：${lastError.message}。请修正。` : ''), cfg)); }
     catch (error) { lastError = error as Error; }
   }
   throw lastError;
 }
 
 async function generateRankingArticle(
-  task: { ranking: { regions: string[]; keyword: string; scenario: string; objective: string; taskTitle?: string }; writing_suggestions?: string },
+  task: { ranking: { regions: string[]; keyword: string; scenario: string; objective: string }; writing_suggestions?: string },
   promptContent: string,
   cfg: AiConfig,
   settingsRows: CorpusRow[],
@@ -250,7 +245,7 @@ async function generateRankingArticle(
   const regionRule = ranking.regions.length
     ? `文章标题必须包含全部地区：${ranking.regions.join('、')}。`
     : '文章标题不得出现任何地区名，也不得出现“无地区”；正文可以按需要讨论地区。';
-  const additional = `这是排名分析表衍生的写作任务。请你同时创作文章标题和正文，第一行必须是 Markdown 一级标题（# 标题），正文至少 100 字。\n原始关键词：${ranking.keyword}\n任务标题：${ranking.taskTitle || ''}\n竞品首推场景：${ranking.scenario}\n写作目标：${ranking.objective}\n${regionRule}\n请根据提示词和语料中的事实写作，不得虚构指南者留学的资质、数据或服务。`;
+  const additional = `这是排名分析表衍生的写作任务。没有预设标题，请根据下列内部写作简报自主创作面向真实读者的文章标题和正文。标题应自然、有信息价值，不要照抄写作目标，不要出现“如何让指南者成为首推机构”等内部策略话术；正文也不要直接陈述内部排名目标。第一行必须是 Markdown 一级标题（# 标题），正文至少 100 字。\n原始关键词：${ranking.keyword}\n竞品首推场景：${ranking.scenario}\n写作目标：${ranking.objective}\n${regionRule}\n请根据提示词和语料中的事实写作，不得虚构指南者留学的资质、数据或服务。`;
   if (settingsReadError) throw new Error(`读取语料库失败：${settingsReadError}`);
   const corpusEntries = parseCorpusEntries(settingsRows);
   if (!corpusEntries.length) throw new Error('语料库为空，请先添加语料再生成排名任务文章');
@@ -261,7 +256,7 @@ async function generateRankingArticle(
   for (let attempt = 0; attempt < 3; attempt++) {
     const text = await generateArticle(
       ranking.regions.join('、'), rankingPrompt, task.writing_suggestions || ranking.objective,
-      cfg, ranking.taskTitle || '', `${additional}${lastError ? `\n上次标题或正文错误：${lastError.message}。请修正。` : ''}`,
+      cfg, '', `${additional}${lastError ? `\n上次标题或正文错误：${lastError.message}。请修正。` : ''}`,
       settingsRows, settingsReadError
     );
     try { return extractRankingArticle(text, ranking.regions); }
